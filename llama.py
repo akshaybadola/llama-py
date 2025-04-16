@@ -130,7 +130,8 @@ class LlamaInterface:
 
     def python_token_callback(self, token_ptr):
         token = ctypes.string_at(token_ptr).decode('utf-8')
-        asyncio.run_coroutine_threadsafe(self.q.put(token), self.loop)
+        future = asyncio.run_coroutine_threadsafe(self.q.put(token), self.loop)
+        future.add_done_callback(lambda f: f.exception() and print("Put failed:", f.exception()))
 
     def eval_message(self, message: dict[str, str | list[str]], stream=False):
         msg_text = message["text"]
@@ -169,7 +170,11 @@ class LlamaInterface:
             num_images
         )
         if stream:
-            result = lib.gemma3_static_stream_response(self.c_callback, self.n_predict)
+            result = self.loop.run_in_executor(
+                None,
+                lambda: lib.gemma3_static_stream_response(self.c_callback, self.n_predict)
+            )
+            return 0
         else:
             result = lib.gemma3_static_generate_response(self.n_predict)
 
@@ -183,6 +188,7 @@ class LlamaInterface:
         """Receive tokens"""
         while True:
             token = await self.q.get()
+            print(token, end="")
             if token == "[EOS]":  # End-of-stream token
                 break
             yield token

@@ -1,6 +1,9 @@
 import asyncio
 import time
 import re
+import base64
+from io import BytesIO
+from PIL import Image
 import sys
 
 import httpx
@@ -17,19 +20,27 @@ url = "http://192.168.1.101:8000/stream"
 async def test_client(url):
     imgs = re.findall(r"\(file://(/.+)\)", msg_txt)
     msg = re.sub(r"\(file://(/.+)\)", "<__image__>", msg_txt)
+    imgs_data = []
+    if imgs:
+        for img_path in imgs:
+            img = Image.open(img_path)
+            img_bytes = BytesIO()
+            img.save(img_bytes, format=img.format)
+            img_str = base64.b64encode(img_bytes.getvalue())
+            imgs_data.append(img_str.decode())
     message = {
         "text": msg,
-        "images": imgs,
+        "images": imgs_data,
     }
 
     async with httpx.AsyncClient() as client:
         async with client.stream("POST", url, json=message, timeout=None) as response:
-            print("Got response")
             if response.status_code == 200:
                 start_time = time.time()
                 count = 0
                 async for chunk in response.aiter_text():
-                    print(f"Received chunk: {chunk.strip()}")
+                    print(chunk.replace('\n', '', 1), end="")
+                    sys.stdout.flush()
                     count += 1
                 end_time = time.time()
                 duration = end_time - start_time

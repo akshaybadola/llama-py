@@ -6,7 +6,7 @@ from starlette.requests import Request
 from starlette.responses import StreamingResponse
 from starlette.routing import Route
 
-import llama
+from . import llama
 
 
 class Service:

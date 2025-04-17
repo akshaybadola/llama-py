@@ -3,11 +3,11 @@ import ctypes
 from ctypes import (cdll, c_void_p, c_char_p, c_int, create_string_buffer, CFUNCTYPE,
                     POINTER, c_ubyte, cast, Structure, Array, c_voidp)
 import time
-from threading import Thread
 from io import BytesIO
 import json
 import asyncio
 import base64
+import sys
 
 from PIL import Image
 
@@ -66,6 +66,7 @@ class LlamaInterface:
     #     return result
 
     def eval_message(self, message: dict[str, str | list[str]], stream=False, add_bos=False):
+        self.q = asyncio.Queue()
         msg_text = message["text"]
         msg_imgs = message["images"]
         if not self.is_multimodal:
@@ -98,20 +99,26 @@ class LlamaInterface:
                 add_bos
             )
         if stream:
-            return self.loop.run_in_executor(
+            self.loop.run_in_executor(
                 None,
                 lambda: self.lib.gemma3_static_stream_response(self.c_callback, self.n_predict)
             )
+            return 0
         result = self.lib.gemma3_static_generate_response(self.n_predict)
         return result
 
-    async def receive_tokens(self, stream_future) -> AsyncGenerator[str, None]:
+    async def receive_tokens(self) -> AsyncGenerator[str, None]:
         """Receive tokens"""
         while True:
             token = await self.q.get()
             if token == "[EOS]":  # End-of-stream token
+                print("Got [EOS] token")
+                sys.stdout.flush()
                 break
             yield token
+
+    def reset_context(self):
+        return self.lib.gemma3_static_reset()
 
     # async def receive_tokens(self, request_id: str) -> AsyncGenerator[str, None]:
     #     """Receive tokens for a specific request."""

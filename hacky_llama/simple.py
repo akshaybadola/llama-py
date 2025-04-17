@@ -6,7 +6,7 @@ import sys
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import StreamingResponse
+from starlette.responses import StreamingResponse, Response
 from starlette.routing import Route
 
 from . import llama
@@ -93,6 +93,7 @@ async def process_chat(iface, messages: list[dict[str, str]],
     Generates a mock streaming response.  Replace with your model logic.
     """
     # Need to format the prompt here
+    sys.stdout.flush()
     if isinstance(messages[-1]["content"], dict):
         if messages[-1]["content"].keys() - {"text", "images"}:
             raise NotImplementedError("Only text and images implemented for now")
@@ -102,11 +103,11 @@ async def process_chat(iface, messages: list[dict[str, str]],
     else:
         raise NotImplementedError(f"Got bad message f{messages[-1]['content']}")
     add_bos = len(messages) == 1
-    stream_future = iface.eval_message(prompt, stream=True, add_bos=add_bos)
-    if stream_future is None:
-        raise Exception("eval_message failed to return a request ID for streaming")
+    print(f"prompt {prompt}, add_bos {add_bos}")
+    sys.stdout.flush()
+    iface.eval_message(prompt, stream=True, add_bos=add_bos)
     try:
-        async for token in iface.receive_tokens(stream_future):
+        async for token in iface.receive_tokens():
             resp = {
                 "choices": [
                     {
@@ -116,21 +117,24 @@ async def process_chat(iface, messages: list[dict[str, str]],
                 ],
             }
             yield json.dumps(resp)  # Add a newline for easier client handling
-        # resp = {
-        #     "choices": [
-        #         {
-        #             "delta": {},
-        #             "finish_reason": "stop"
-        #         }
-        #     ],
-        # }
-        # yield json.dumps(resp)
     except KeyError as e:
         yield f"KeyError: {e}"
         yield "[DONE]\n\n"
     except Exception as e:
         yield f"Exception: {e}"
         yield "[DONE]\n\n"
+
+
+async def reset_context(request: Request) -> StreamingResponse:
+    """
+    Handles the /v1/chat/completions endpoint for streaming.
+    """
+    iface = request.app.state.llama_interface
+    result = iface.reset_context()
+    if not result:
+        return Response("Successfully reset", status_code=200)
+    else:
+        return Response("Successfully reset", status_code=500)
 
 
 async def chat(request: Request) -> StreamingResponse:
@@ -141,7 +145,7 @@ async def chat(request: Request) -> StreamingResponse:
     try:
         body = await request.json()
         messages = body["messages"]
-        stream = body.get("stream", False)
+        stream = body.get("stream", True)
         temperature = body.get("temperature", 0.2)
     except Exception as e:
         async def error_generator(e):
@@ -150,20 +154,20 @@ async def chat(request: Request) -> StreamingResponse:
             yield "data: [DONE]\n\n"
         return StreamingResponse(error_generator(e), media_type="text/event-stream")
 
-    if not stream:
-        async def non_stream_generator():
-            full_response_text = ""
-            async for chunk in process_chat(iface, messages, temperature):
-                chunk_data = json.loads(chunk)
-                if chunk_data["choices"][0]["finish_reason"] == "stop":
-                    break
-                if "content" in chunk_data["choices"][0]["delta"]:
-                    full_response_text += chunk_data["choices"][0]["delta"]["content"]
-            yield json.dumps({
-                "choices": [{"message": {"role": "assistant", "content": full_response_text},
-                             "finish_reason": "stop"}]
-            })
-        return StreamingResponse(non_stream_generator(), media_type="application/json")
+    # if not stream:
+    #     async def non_stream_generator():
+    #         full_response_text = ""
+    #         async for chunk in process_chat(iface, messages, temperature):
+    #             chunk_data = json.loads(chunk)
+    #             if chunk_data["choices"][0]["finish_reason"] == "stop":
+    #                 break
+    #             if "content" in chunk_data["choices"][0]["delta"]:
+    #                 full_response_text += chunk_data["choices"][0]["delta"]["content"]
+    #         yield json.dumps({
+    #             "choices": [{"message": {"role": "assistant", "content": full_response_text},
+    #                          "finish_reason": "stop"}]
+    #         })
+    #     return StreamingResponse(non_stream_generator(), media_type="application/json")
 
     async def generate() -> AsyncGenerator[str, None]:
         print("Got messages", messages)
@@ -206,6 +210,7 @@ async def create_app(config, mock_llama_interface=None) -> Starlette:
         Route("/stream", stream_response, methods=["POST"]),
         Route("/completions", chat, methods=["POST"]),
         Route("/chat/completions", chat, methods=["POST"]),
+        Route("/reset_context", reset_context, methods=["GET"]),
     ])
 
     async def startup():

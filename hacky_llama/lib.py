@@ -123,4 +123,7 @@ def init_lib(dll_path: str):
     ]
     lib.gemma3_static_stream_response.restype = c_int
 
+    lib.gemma3_static_reset.argtypes = []
+    lib.gemma3_static_reset.restype = c_int
+
     return lib

@@ -28,7 +28,7 @@ async def stream_response(request: Request) -> StreamingResponse:
     async def generate_tokens() -> AsyncGenerator[str, None]:
         try:
             async for token in iface.receive_tokens():
-                yield token + "\n"  # Add a newline for easier client handling
+                yield token + "\n\n"  # Add a newline for easier client handling
                 print(token, end="")
                 sys.stdout.flush()
         except KeyError as e:
@@ -38,56 +38,6 @@ async def stream_response(request: Request) -> StreamingResponse:
 
     return StreamingResponse(generate_tokens(), media_type="text/plain",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-
-
-async def process_chat(iface, messages: list[dict[str, str]],
-                       temperature: Optional[float] = None) -> AsyncGenerator[str, None]:
-    """
-    Generates a mock streaming response.  Replace with your model logic.
-    """
-    # Need to format the prompt here
-    print("Got messages", messages)
-    if isinstance(messages[-1]["content"], dict):
-        if messages[-1]["content"].keys() - {"text", "images"}:
-            raise NotImplementedError("Only text and images implemented for now")
-        prompt = messages[-1]["content"]
-    elif isinstance(messages[-1]["content"], str):
-        prompt = {"text": messages[-1]["content"], "images": []}
-    else:
-        raise NotImplementedError(f"Got bad message f{messages[-1]['content']}")
-    add_bos = len(messages) == 1
-    request_id = iface.eval_message(prompt, stream=True, add_bos=add_bos)
-    if request_id is None:
-        raise Exception("eval_message failed to return a request ID for streaming")
-
-    try:
-        async for token in iface.receive_tokens():
-            resp = {
-                "choices": [
-                    {
-                        "delta": {"content": token},
-                        "finish_reason": None,
-                    }
-                ],
-            }
-            yield json.dumps(resp)  #  + "\n"  # Add a newline for easier client handling
-        resp = {
-            "choices": [
-                {
-                    "delta": {},
-                    "finish_reason": "stop",
-                }
-            ],
-        }
-        yield json.dumps(resp)
-        yield "[DONE]"
-    except KeyError as e:
-        yield f"KeyError: {e}"
-    except Exception as e:
-        yield f"Exception: {e}"
-
-    # return StreamingResponse(generate_tokens(), media_type="application/json",
-    #                          headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 async def mock_process_chat(iface, messages: list[dict[str, str]],
@@ -137,6 +87,51 @@ async def mock_process_chat(iface, messages: list[dict[str, str]],
     yield "[DONE]"
 
 
+async def process_chat(iface, messages: list[dict[str, str]],
+                       temperature: Optional[float] = None) -> AsyncGenerator[str, None]:
+    """
+    Generates a mock streaming response.  Replace with your model logic.
+    """
+    # Need to format the prompt here
+    if isinstance(messages[-1]["content"], dict):
+        if messages[-1]["content"].keys() - {"text", "images"}:
+            raise NotImplementedError("Only text and images implemented for now")
+        prompt = messages[-1]["content"]
+    elif isinstance(messages[-1]["content"], str):
+        prompt = {"text": messages[-1]["content"], "images": []}
+    else:
+        raise NotImplementedError(f"Got bad message f{messages[-1]['content']}")
+    add_bos = len(messages) == 1
+    stream_future = iface.eval_message(prompt, stream=True, add_bos=add_bos)
+    if stream_future is None:
+        raise Exception("eval_message failed to return a request ID for streaming")
+    try:
+        async for token in iface.receive_tokens(stream_future):
+            resp = {
+                "choices": [
+                    {
+                        "delta": {"content": token},
+                        "finish_reason": None,
+                    }
+                ],
+            }
+            yield json.dumps(resp)  # Add a newline for easier client handling
+        # resp = {
+        #     "choices": [
+        #         {
+        #             "delta": {},
+        #             "finish_reason": "stop"
+        #         }
+        #     ],
+        # }
+        # yield json.dumps(resp)
+    except KeyError as e:
+        yield f"KeyError: {e}"
+        yield "[DONE]\n\n"
+    except Exception as e:
+        yield f"Exception: {e}"
+        yield "[DONE]\n\n"
+
 
 async def chat(request: Request) -> StreamingResponse:
     """
@@ -171,9 +166,9 @@ async def chat(request: Request) -> StreamingResponse:
         return StreamingResponse(non_stream_generator(), media_type="application/json")
 
     async def generate() -> AsyncGenerator[str, None]:
+        print("Got messages", messages)
         async for chunk in process_chat(iface, messages, temperature):
             yield f"data: {chunk}\n\n"
-        yield "data: [DONE]\n\n"
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
@@ -193,7 +188,7 @@ async def chat(request: Request) -> StreamingResponse:
 #         try:
 #             async for token in iface.receive_tokens():
 #                 sys.stdout.flush() # ADDED THIS LINE
-#                 yield token + "\n"  # Add a newline for easier client handling
+#                 yield token + "\n\n"  # Add a newline for easier client handling
 #         except KeyError as e:
 #             yield f"KeyError: {e}"
 #         except Exception as e:

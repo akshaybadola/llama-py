@@ -3,6 +3,7 @@ import ctypes
 from ctypes import (cdll, c_void_p, c_char_p, c_int, create_string_buffer, CFUNCTYPE,
                     POINTER, c_ubyte, cast, Structure, Array, c_voidp)
 import time
+from threading import Thread
 from io import BytesIO
 import json
 import asyncio
@@ -97,21 +98,14 @@ class LlamaInterface:
                 add_bos
             )
         if stream:
-            result = self.loop.run_in_executor(
+            return self.loop.run_in_executor(
                 None,
                 lambda: self.lib.gemma3_static_stream_response(self.c_callback, self.n_predict)
             )
-            return 0
-        else:
-            result = self.lib.gemma3_static_generate_response(self.n_predict)
-
-        if result == 0:
-            print("Message with multiple raw images evaluated successfully.")
-        else:
-            print(f"Error evaluating message with multiple raw images: {result}")
+        result = self.lib.gemma3_static_generate_response(self.n_predict)
         return result
 
-    async def receive_tokens(self) -> AsyncGenerator[str, None]:
+    async def receive_tokens(self, stream_future) -> AsyncGenerator[str, None]:
         """Receive tokens"""
         while True:
             token = await self.q.get()

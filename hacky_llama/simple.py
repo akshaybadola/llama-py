@@ -40,55 +40,9 @@ async def stream_response(request: Request) -> StreamingResponse:
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-async def mock_process_chat(iface, messages: list[dict[str, str]],
-                            temperature: Optional[float] = None) -> AsyncGenerator[str, None]:
-    """
-    Generates a mock streaming response.  Replace with your model logic.
-    """
-    print("Got messages", messages)
-    prompt = " ".join([m["content"] for m in messages])
-    response_text = f"Mock response to: {prompt}. Temperature is {temperature}."
-    words = response_text.split()
-    for i, word in enumerate(words):
-        if not i:
-            resp = {
-                "choices": [
-                    {
-                        "delta": {"role": "assistant", "content": word + " "},
-                        "finish_reason": None,
-                    }
-                ],
-            }
-            print("Sending resp", resp)
-            yield json.dumps(resp)
-        else:
-            resp = {
-                "choices": [
-                    {
-                        "delta": {"content": word + " "},
-                        "finish_reason": None,
-                    }
-                ],
-            }
-            print("Sending resp", resp)
-            yield json.dumps(resp)
-        await asyncio.sleep(0.1)
-
-    resp = {
-        "choices": [
-            {
-                "delta": {},
-                "finish_reason": "stop",
-            }
-        ],
-    }
-    print("Sending resp", resp)
-    yield json.dumps(resp)
-    yield "[DONE]"
-
-
 async def process_chat(iface, messages: list[dict[str, str]],
-                       temperature: Optional[float] = None) -> AsyncGenerator[str, None]:
+                       temperature: Optional[float] = None,
+                       reset: bool = False) -> AsyncGenerator[str, None]:
     """
     Generates a mock streaming response.  Replace with your model logic.
     """
@@ -102,7 +56,10 @@ async def process_chat(iface, messages: list[dict[str, str]],
         prompt = {"text": messages[-1]["content"], "images": []}
     else:
         raise NotImplementedError(f"Got bad message f{messages[-1]['content']}")
-    add_bos = len(messages) == 1
+    add_bos = False
+    if reset:
+        iface.reset_context()
+        add_bos = True
     print(f"prompt {prompt}, add_bos {add_bos}")
     sys.stdout.flush()
     iface.eval_message(prompt, stream=True, add_bos=add_bos)
@@ -147,6 +104,7 @@ async def chat(request: Request) -> StreamingResponse:
         messages = body["messages"]
         stream = body.get("stream", True)
         temperature = body.get("temperature", 0.2)
+        reset = body.get("reset", False)
     except Exception as e:
         async def error_generator(e):
             err = {'error': e}
@@ -170,8 +128,7 @@ async def chat(request: Request) -> StreamingResponse:
     #     return StreamingResponse(non_stream_generator(), media_type="application/json")
 
     async def generate() -> AsyncGenerator[str, None]:
-        print("Got messages", messages)
-        async for chunk in process_chat(iface, messages, temperature):
+        async for chunk in process_chat(iface, messages, temperature, reset):
             yield f"data: {chunk}\n\n"
     return StreamingResponse(generate(), media_type="text/event-stream")
 

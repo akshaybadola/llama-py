@@ -1,12 +1,16 @@
 import pytest
 import asyncio
-from unittest.mock import patch, AsyncMock
+from typing import Optional, AsyncGenerator
+
+from hacky_llama.simple import create_app, chat
+from hacky_llama import simple
+
+from starlette.applications import Starlette
+from starlette.routing import Route
 from starlette.testclient import TestClient
 import uvicorn
 
-from hacky_llama.simple import create_app
-
-from util import MockLlamaInterface
+from util import MockLlamaInterface, fake_process_chat
 
 
 @pytest.mark.asyncio
@@ -26,6 +30,41 @@ async def test_stream_with_injected_mock():
 
 def run_test_server():
     config = {"lib_path": None, "model_path": None, "mmproj_path": None, "overrides": None}
+
+    async def run_app(config):
+        app = await create_app(config, mock_llama_interface=MockLlamaInterface())
+        uvicorn_config = uvicorn.Config(app=app, host="0.0.0.0", port=8000, log_level="debug")
+        server = uvicorn.Server(uvicorn_config)
+        await server.serve()
+    asyncio.run(run_app(config))
+
+
+def test_run_fake_server():
+    config = {"lib_path": None, "model_path": None, "mmproj_path": None, "overrides": None}
+    simple.process_chat = fake_process_chat
+
+    async def create_app(config, mock_llama_interface=None) -> Starlette:
+        """
+        Create the Starlette application.
+        """
+        app = Starlette(routes=[
+            Route("/completions", chat, methods=["POST"]),
+            Route("/chat/completions", chat, methods=["POST"]),
+            Route("/reset_context", simple.reset_context, methods=["GET"]),
+        ])
+
+        async def startup():
+            if mock_llama_interface is not None:
+                app.state.llama_interface = mock_llama_interface
+            else:
+                loop = asyncio.get_running_loop()
+                app.state.llama_interface = MockLlamaInterface(
+                    loop=loop,
+                    **config
+                )
+
+        app.add_event_handler("startup", startup)
+        return app
 
     async def run_app(config):
         app = await create_app(config, mock_llama_interface=MockLlamaInterface())

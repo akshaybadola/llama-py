@@ -112,51 +112,10 @@ async def chat(request: Request) -> StreamingResponse:
             yield "data: [DONE]\n\n"
         return StreamingResponse(error_generator(e), media_type="text/event-stream")
 
-    # if not stream:
-    #     async def non_stream_generator():
-    #         full_response_text = ""
-    #         async for chunk in process_chat(iface, messages, temperature):
-    #             chunk_data = json.loads(chunk)
-    #             if chunk_data["choices"][0]["finish_reason"] == "stop":
-    #                 break
-    #             if "content" in chunk_data["choices"][0]["delta"]:
-    #                 full_response_text += chunk_data["choices"][0]["delta"]["content"]
-    #         yield json.dumps({
-    #             "choices": [{"message": {"role": "assistant", "content": full_response_text},
-    #                          "finish_reason": "stop"}]
-    #         })
-    #     return StreamingResponse(non_stream_generator(), media_type="application/json")
-
     async def generate() -> AsyncGenerator[str, None]:
         async for chunk in process_chat(iface, messages, temperature, reset):
             yield f"data: {chunk}\n\n"
     return StreamingResponse(generate(), media_type="text/event-stream")
-
-
-# async def complete(request: Request) -> StreamingResponse:
-#     """
-#     Endpoint that streams tokens from the Llama model.
-#     """
-#     message = await request.json()
-#     #  get the llama interface from the app state.
-#     iface = request.app.state.llama_interface
-#     request_id = iface.eval_message(message, stream=False)
-#     # TODO: It's an int right now
-#     if request_id is None:
-#         raise Exception("eval_message failed to return a request ID for streaming")
-
-#     async def generate_tokens() -> AsyncGenerator[str, None]:
-#         try:
-#             async for token in iface.receive_tokens():
-#                 sys.stdout.flush() # ADDED THIS LINE
-#                 yield token + "\n\n"  # Add a newline for easier client handling
-#         except KeyError as e:
-#             yield f"KeyError: {e}"
-#         except Exception as e:
-#             yield f"Exception: {e}"
-
-#     return StreamingResponse(generate_tokens(), media_type="text/plain")
-
 
 
 async def create_app(config, mock_llama_interface=None) -> Starlette:

@@ -15,6 +15,13 @@ TOKEN_CALLBACK = CFUNCTYPE(None, c_char_p)
 
 
 def init_lib(dll_path: str):
+    """Initialize Gemma3 C API lib and return
+
+    Args:
+        dll_path: Library file path
+
+
+    """
     lib = cdll.LoadLibrary(dll_path)
 
     lib.gemma3_create_params.argtypes = []
@@ -37,12 +44,6 @@ def init_lib(dll_path: str):
         c_char_p                    # mmproj_path
     ]
     lib.gemma3_create_context.restype = c_void_p
-
-    lib.gemma3_eval_message.argtypes = [
-        c_void_p,                   # ctx_ptr
-        c_char_p                    # msg_str
-    ]
-    lib.gemma3_eval_message.restype = c_int
 
     lib.gemma3_generate_response.argtypes = [
         c_void_p,                   # ctx_ptr
@@ -86,13 +87,6 @@ def init_lib(dll_path: str):
     ]
     lib.gemma3_static_initialize.restype = c_void_p
 
-    # static eval message
-    lib.gemma3_static_eval_message.argtypes = [
-        c_char_p,                   # msg str
-        c_bool                      # add_bos
-    ]
-    lib.gemma3_static_eval_message.restype = c_int
-
     # static eval message text only. Uses different C function
     lib.gemma3_static_eval_message_text_only.argtypes = [
         c_char_p,                   # msg str
@@ -125,5 +119,8 @@ def init_lib(dll_path: str):
 
     lib.gemma3_static_reset.argtypes = []
     lib.gemma3_static_reset.restype = c_int
+
+    lib.gemma3_is_generating.argtypes = []
+    lib.gemma3_is_generating.restype = c_bool
 
     return lib

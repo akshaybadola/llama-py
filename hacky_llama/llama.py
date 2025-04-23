@@ -16,7 +16,7 @@ from .lib import init_lib, TOKEN_CALLBACK
 
 class LlamaInterface:
     def __init__(self, lib_path: str, model_path: str, mmproj_path: Optional[str] = None,
-                 overrides: Optional[dict] = None, loop=None):
+                 overrides: Optional[dict] = None, n_predict: int = 8192, loop=None):
         print("Loading library", lib_path)
         self.lib = init_lib(lib_path)
         overrides = overrides or {}
@@ -33,7 +33,7 @@ class LlamaInterface:
             mmproj_path.encode(),
             json.dumps(overrides).encode()
         )
-        self.n_predict = 1024
+        self.n_predict = n_predict
         try:
             self.loop = loop or asyncio.get_running_loop()
         except Exception:

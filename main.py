@@ -13,9 +13,9 @@ if __name__ == "__main__":
     parser.add_argument("--model_path")
     parser.add_argument("--lib_path")
     parser.add_argument("--mmproj_path")
-    parser.add_argument("--n_predict")
+    parser.add_argument("--n_predict", type=int)
     parser.add_argument("--overrides")
-    parser.add_argument("--port")
+    parser.add_argument("--port", type=int)
     args = parser.parse_args()
 
     async def run_app(config):

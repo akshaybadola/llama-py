@@ -70,7 +70,6 @@ class ModelManager:
         """Proxies a request to the service.py process."""
         url = f"{self.service_url}/{endpoint}"
         headers = request.headers.mutablecopy()
-
         try:
             if request.method == "GET":
                 async with httpx.AsyncClient() as client:
@@ -78,21 +77,13 @@ class ModelManager:
             elif request.method == "POST":
                 if endpoint in {"stream", "completions", "chat/completions"}:
                     async with httpx.AsyncClient() as client:
-                        data = await request.json()
-                        async with client.stream("POST", url, json=data, timeout=None) as response:
-                            if response.status_code == 200 and\
-                               'Content-Type' in response.headers and\
-                               response.headers['Content-Type'] == 'text/event-stream':
-                                async def stream_generator():
-                                    async for chunk in response.aiter_text():
-                                        if chunk:
-                                            yield f"data: {chunk}\n\n"
-                                return StreamingResponse(stream_generator(), media_type="text/event-stream")
-                            elif response.status_code == 200:
-                                data = await response.json()
-                                return JSONResponse(data, staus_code=response.status_code)
-                            else:
-                                return JSONResponse({"Error": "Error"}, status_code=response.status_code)
+                        async def stream_generator():
+                            data = await request.json()
+                            async with client.stream("POST", url, json=data, timeout=None) as response:
+                                async for chunk in response.aiter_text():
+                                    if chunk:
+                                        yield f"data {chunk}\n\n"
+                        return StreamingResponse(stream_generator(), media_type="text/event-stream")
                 else:
                     async with httpx.AsyncClient() as client:
                         data = await request.json()

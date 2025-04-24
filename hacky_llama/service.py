@@ -35,13 +35,14 @@ class ModelManager:
         self.service_port = 8001
         self.service_url = f"http://localhost:{self.service_port}"
         self.config = config
+        self.python = config["python"]
         self.start_process()
 
     def _start_process(self):
         """Starts the llama.cpp process."""
         print("Starting process")
         command = [
-            "python",
+            self.python,
             "main.py",  # Assuming service.py contains the Llama routes
             "--model_path", self.config["model_path"],
             "--lib_path", self.config["lib_path"],
@@ -91,10 +92,9 @@ class ModelManager:
                 else:
                     async with httpx.AsyncClient() as client:
                         data = await request.json()
-                        async with client.post(url, json=data, timeout=1) as response:
-                            return JSONResponse(data, staus_code=response.status_code)
+                        return client.post(url, json=data, timeout=2)
             else:
-                return JSONResponse(await response.json(), status_code=response.status_code)
+                return JSONResponse({"Error": "Method not allowed"}, status_code=405)
         except Exception as e:
             logger.error(f"Error proxying request to service.py: {e}")
             return JSONResponse({"error": f"Failed to proxy request: {e}"}, status_code=500)
@@ -118,6 +118,9 @@ def model_manager_app(config):
     async def stream(request):
         return await model_manager.proxy_request("stream", request)
 
+    async def model_info(request):
+        return JSONResponse(model_manager.config, status_code=200)
+
     async def completions(request):
         return await model_manager.proxy_request("completions", request)
 
@@ -139,7 +142,8 @@ def model_manager_app(config):
         Route("/completions", endpoint=completions, methods=["POST"]),
         Route("/chat/completions", endpoint=chat_completions, methods=["POST"]),
         Route("/reset_context", endpoint=reset_context, methods=["GET"]),
-        Route("/interrupt", endpoint=interrupt, methods=["POST"]),
+        Route("/model_info", endpoint=model_info, methods=["GET"]),
+        Route("/interrupt", endpoint=interrupt, methods=["GET"]),
         Route("/is_generating", endpoint=is_generating, methods=["GET"]),
     ]
 

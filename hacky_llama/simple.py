@@ -118,6 +118,16 @@ async def chat(request: Request) -> StreamingResponse:
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+async def interrupt(request: Request) -> Response:
+    request.app.state.llama_interface.interrupt()
+    return Response("Interrupted")
+
+
+async def is_generating(request: Request) -> Response:
+    val = request.app.state.llama_interface.is_generating()
+    return Response(str(val))
+
+
 async def create_app(config, mock_llama_interface=None) -> Starlette:
     """
     Create the Starlette application.
@@ -127,8 +137,9 @@ async def create_app(config, mock_llama_interface=None) -> Starlette:
         Route("/completions", chat, methods=["POST"]),
         Route("/chat/completions", chat, methods=["POST"]),
         Route("/reset_context", reset_context, methods=["GET"]),
-    ],
-                    debug=True)
+        Route("/interrupt", interrupt, methods=["GET"]),
+        Route("/is_generating", is_generating, methods=["GET"]),
+    ], debug=True)
 
     async def startup():
         if mock_llama_interface is not None:

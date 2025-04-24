@@ -17,7 +17,7 @@ for all the math symbols."""
 url = "http://192.168.1.101:8000/stream"
 
 
-async def test_client(url):
+async def test_stream(url):
     imgs = re.findall(r"\(file://(/.+)\)", msg_txt)
     msg = re.sub(r"\(file://(/.+)\)", "<__image__>", msg_txt)
     imgs_data = []
@@ -50,4 +50,4 @@ async def test_client(url):
 
 
 if __name__ == '__main__':
-    asyncio.run(test_client(url=url))
+    asyncio.run(test_stream(url=url))

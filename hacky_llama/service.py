@@ -12,11 +12,19 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import StreamingResponse, JSONResponse
 from starlette.routing import Route
+from starlette.background import BackgroundTask
 
 from . import simple
 
 
 logger = logging.getLogger(__name__)
+
+
+async def stream_response(upstream_url: str, data):
+    async with httpx.AsyncClient() as client:
+        async with client.stream("POST", upstream_url, json=data, timeout=None) as response:
+            async for chunk in response.aiter_bytes():
+                yield chunk
 
 
 class ModelManager:
@@ -76,14 +84,10 @@ class ModelManager:
                     return await client.get(url, headers=headers, params=request.query_params)
             elif request.method == "POST":
                 if endpoint in {"stream", "completions", "chat/completions"}:
-                    async with httpx.AsyncClient() as client:
-                        async def stream_generator():
-                            data = await request.json()
-                            async with client.stream("POST", url, json=data, timeout=None) as response:
-                                async for chunk in response.aiter_text():
-                                    if chunk:
-                                        yield f"data {chunk}\n\n"
-                        return StreamingResponse(stream_generator(), media_type="text/event-stream")
+                    data = await request.json()
+                    return StreamingResponse(stream_response(url, data),
+                                             background=BackgroundTask(lambda: None),
+                                             media_type="text/event-stream")
                 else:
                     async with httpx.AsyncClient() as client:
                         data = await request.json()

@@ -5,6 +5,7 @@ import sys
 import os
 import logging
 import httpx
+from threading import Thread
 
 from typing import AsyncGenerator, Optional, Any
 from starlette.applications import Starlette
@@ -23,11 +24,14 @@ class ModelManager:
         self.config = config
         self.llama = None
         self.process = None
-        self.service_url = "http://localhost:8000"  # Default URL, can be configurable
+        self.service_port = 8001
+        self.service_url = f"http://localhost:{self.service_port}"
         self.config = config
+        self.start_process()
 
-    async def start_process(self):
+    def _start_process(self):
         """Starts the llama.cpp process."""
+        print("Starting process")
         command = [
             "python",
             "main.py",  # Assuming service.py contains the Llama routes
@@ -35,14 +39,19 @@ class ModelManager:
             "--lib_path", self.config["lib_path"],
             "--mmproj_path", self.config["mmproj_path"],
             "--n_predict", str(self.config["n_predict"]),
-            "--port", str(8001),
-            "--overrides", json.dumps(self.config["self.overrides"])
+            "--port", str(self.service_port),
+            "--overrides", json.dumps(self.config["overrides"])
         ]
         logger.info(f"Starting llama.cpp process with command: {' '.join(command)}")
         self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return self.process
+        out, err = self.process.communicate()
 
-    async def stop_process(self):
+    def start_process(self):
+        self.process_thread = Thread(target=self._start_process)
+        self.process_thread.daemon = True
+        self.process_thread.start()
+
+    def stop_process(self):
         """Stops the llama.cpp process."""
         if self.process:
             logger.info("Stopping llama.cpp process...")
@@ -51,37 +60,43 @@ class ModelManager:
             self.process = None
             logger.info("llama.cpp process stopped.")
 
-    async def load_model(self, new_config):
+    def load_model(self, new_config):
         """Loads a new model."""
-        await self.stop_process()
+        self.stop_process()
         self.config.update(new_config)
-        self.process = await self.start_process()
-        await asyncio.sleep(5)  # Give it some time to load
+        self.process = self.start_process()
 
-    async def proxy_request(self, endpoint, request):
+    async def proxy_request(self, endpoint: str, request: Request):
         """Proxies a request to the service.py process."""
         url = f"{self.service_url}/{endpoint}"
-        headers = request.headers.copy()
-        headers["Content-Type"] = request.content_type
+        headers = request.headers.mutablecopy()
 
         try:
             if request.method == "GET":
                 async with httpx.AsyncClient() as client:
                     return await client.get(url, headers=headers, params=request.query_params)
             elif request.method == "POST":
-                async with httpx.AsyncClient() as client:
-                    data = await request.json()
-                    async with client.stream("POST", url, json=data, timeout=None) as response:
-                        if response.status_code == 200 and\
-                           'Content-Type' in response.headers and\
-                           response.headers['Content-Type'] == 'text/event-stream':
-                            async def stream_generator():
-                                async for chunk in response.aiter_text():
-                                    if chunk:
-                                        yield f"data: {chunk}\n\n"
-                            return StreamingResponse(stream_generator(), media_type="text/event-stream")
-                        elif response.status_code == 200:
-                            data = await response.json()
+                if endpoint in {"stream", "completions", "chat/completions"}:
+                    async with httpx.AsyncClient() as client:
+                        data = await request.json()
+                        async with client.stream("POST", url, json=data, timeout=None) as response:
+                            if response.status_code == 200 and\
+                               'Content-Type' in response.headers and\
+                               response.headers['Content-Type'] == 'text/event-stream':
+                                async def stream_generator():
+                                    async for chunk in response.aiter_text():
+                                        if chunk:
+                                            yield f"data: {chunk}\n\n"
+                                return StreamingResponse(stream_generator(), media_type="text/event-stream")
+                            elif response.status_code == 200:
+                                data = await response.json()
+                                return JSONResponse(data, staus_code=response.status_code)
+                            else:
+                                return JSONResponse({"Error": "Error"}, status_code=response.status_code)
+                else:
+                    async with httpx.AsyncClient() as client:
+                        data = await request.json()
+                        async with client.post(url, json=data, timeout=1) as response:
                             return JSONResponse(data, staus_code=response.status_code)
             else:
                 return JSONResponse(await response.json(), status_code=response.status_code)
@@ -94,7 +109,7 @@ async def model_switch_endpoint(request, model_manager):
     """Endpoint to switch models."""
     params = await request.json()
     logger.info(f"Switching model with params: {params}")
-    await model_manager.load_model(params)
+    model_manager.load_model(params)
     return JSONResponse({"message": "Model switched"})
 
 
@@ -102,36 +117,37 @@ def model_manager_app(config):
     """Starlette application for model management."""
     model_manager = ModelManager(config)
 
-    app = Starlette()
-
-    @app.get("/switch_model")
     async def switch_model(request):
         return await model_switch_endpoint(request, model_manager)
 
-    # Proxy endpoints
-    @app.get("/stream")
     async def stream(request):
         return await model_manager.proxy_request("stream", request)
 
-    @app.post("/completions")
     async def completions(request):
         return await model_manager.proxy_request("completions", request)
 
-    @app.post("/chat/completions")
     async def chat_completions(request):
         return await model_manager.proxy_request("chat/completions", request)
 
-    @app.post("/reset_context")
     async def reset_context(request):
         return await model_manager.proxy_request("reset_context", request)
 
-    @app.post("/interrupt")
     async def interrupt(request):
         return await model_manager.proxy_request("interrupt", request)
 
-    @app.get("/is_generating")
     async def is_generating(request):
         return await model_manager.proxy_request("is_generating", request)
 
+    routes = [
+        Route("/switch_model", endpoint=switch_model, methods=["POST"]),
+        Route("/stream", endpoint=stream, methods=["POST"]),
+        Route("/completions", endpoint=completions, methods=["POST"]),
+        Route("/chat/completions", endpoint=chat_completions, methods=["POST"]),
+        Route("/reset_context", endpoint=reset_context, methods=["GET"]),
+        Route("/interrupt", endpoint=interrupt, methods=["POST"]),
+        Route("/is_generating", endpoint=is_generating, methods=["GET"]),
+    ]
+
+    app = Starlette(routes=routes, debug=True)
     app.state.model_manager = model_manager
     return app

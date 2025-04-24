@@ -127,7 +127,8 @@ async def create_app(config, mock_llama_interface=None) -> Starlette:
         Route("/completions", chat, methods=["POST"]),
         Route("/chat/completions", chat, methods=["POST"]),
         Route("/reset_context", reset_context, methods=["GET"]),
-    ])
+    ],
+                    debug=True)
 
     async def startup():
         if mock_llama_interface is not None:

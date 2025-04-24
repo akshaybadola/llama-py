@@ -16,7 +16,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_predict")
     parser.add_argument("--overrides")
     parser.add_argument("--port")
-    args = parser.parse_args
+    args = parser.parse_args()
 
     async def run_app(config):
         port = config.pop("port")

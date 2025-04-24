@@ -6,11 +6,12 @@ import os
 import logging
 import httpx
 from threading import Thread
+from functools import partial
 
 from typing import AsyncGenerator, Optional, Any
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import StreamingResponse, JSONResponse
+from starlette.responses import StreamingResponse, JSONResponse, Response
 from starlette.routing import Route
 from starlette.background import BackgroundTask
 
@@ -40,17 +41,14 @@ class ModelManager:
 
     def _start_process(self):
         """Starts the llama.cpp process."""
-        print("Starting process")
-        command = [
-            self.python,
-            "main.py",  # Assuming service.py contains the Llama routes
-            "--model_path", self.config["model_path"],
-            "--lib_path", self.config["lib_path"],
-            "--mmproj_path", self.config["mmproj_path"],
-            "--n_predict", str(self.config["n_predict"]),
-            "--port", str(self.service_port),
-            "--overrides", json.dumps(self.config["overrides"])
-        ]
+        cmd_args = ["--model_path", self.config["model_path"],
+                    "--lib_path", self.config["lib_path"],
+                    "--mmproj_path", self.config["mmproj_path"],
+                    "--n_predict", str(self.config["n_predict"]),
+                    "--port", str(self.service_port),
+                    "--overrides", json.dumps(self.config["overrides"])]
+        print(f"Starting process with python: {self.python} and args {cmd_args}")
+        command = [self.python, "main.py", *cmd_args]
         logger.info(f"Starting llama.cpp process with command: {' '.join(command)}")
         self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = self.process.communicate()
@@ -81,8 +79,8 @@ class ModelManager:
         headers = request.headers.mutablecopy()
         try:
             if request.method == "GET":
-                async with httpx.AsyncClient() as client:
-                    return await client.get(url, headers=headers, params=request.query_params)
+                resp = httpx.get(url, headers=headers, params=request.query_params)
+                return JSONResponse(resp.json(), headers=resp.headers)
             elif request.method == "POST":
                 if endpoint in {"stream", "completions", "chat/completions"}:
                     data = await request.json()
@@ -92,7 +90,7 @@ class ModelManager:
                 else:
                     async with httpx.AsyncClient() as client:
                         data = await request.json()
-                        return client.post(url, json=data, timeout=2)
+                        return await client.post(url, json=data, timeout=2)
             else:
                 return JSONResponse({"Error": "Method not allowed"}, status_code=405)
         except Exception as e:

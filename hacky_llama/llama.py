@@ -40,7 +40,7 @@ class LlamaInterface:
             print("Could not get event loop will run in sync mode")
 
     def interrupt(self):
-        self.lib.gemma3_interrupt()
+        self.lib.gemma3_static_interrupt()
 
     def is_generating(self):
         return self.lib.gemma3_is_generating()

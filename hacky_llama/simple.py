@@ -6,7 +6,7 @@ import sys
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import StreamingResponse, Response
+from starlette.responses import StreamingResponse, Response, JSONResponse
 from starlette.routing import Route
 
 from . import llama
@@ -82,18 +82,6 @@ async def process_chat(iface, messages: list[dict[str, str]],
         yield "[DONE]\n\n"
 
 
-async def reset_context(request: Request) -> StreamingResponse:
-    """
-    Handles the /v1/chat/completions endpoint for streaming.
-    """
-    iface = request.app.state.llama_interface
-    result = iface.reset_context()
-    if not result:
-        return Response("Successfully reset", status_code=200)
-    else:
-        return Response("Successfully reset", status_code=500)
-
-
 async def chat(request: Request) -> StreamingResponse:
     """
     Handles the /v1/chat/completions endpoint for streaming.
@@ -118,14 +106,26 @@ async def chat(request: Request) -> StreamingResponse:
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-async def interrupt(request: Request) -> Response:
+async def reset_context(request: Request) -> JSONResponse:
+    """
+    Handles the /v1/chat/completions endpoint for streaming.
+    """
+    iface = request.app.state.llama_interface
+    result = iface.reset_context()
+    if not result:
+        return JSONResponse({"message": "Successfully reset"}, status_code=200)
+    else:
+        return JSONResponse({"message": "Could not reset"}, status_code=500)
+
+
+async def interrupt(request: Request) -> JSONResponse:
     request.app.state.llama_interface.interrupt()
-    return Response("Interrupted")
+    return JSONResponse({"message": "Interrupted"})
 
 
-async def is_generating(request: Request) -> Response:
+async def is_generating(request: Request) -> JSONResponse:
     val = request.app.state.llama_interface.is_generating()
-    return Response(str(val))
+    return JSONResponse({"message": val})
 
 
 async def create_app(config, mock_llama_interface=None) -> Starlette:

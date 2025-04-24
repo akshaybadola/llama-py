@@ -123,7 +123,7 @@ def init_lib(dll_path: str):
     lib.gemma3_is_generating.argtypes = []
     lib.gemma3_is_generating.restype = c_bool
 
-    lib.gemma3_interrupt.argtypes = []
-    lib.gemma3_interrupt.restype = c_voidp
+    lib.gemma3_static_interrupt.argtypes = []
+    lib.gemma3_static_interrupt.restype = c_voidp
 
     return lib

@@ -6,7 +6,7 @@ from hacky_llama.service import model_manager_app
 
 
 if __name__ == "__main__":
-    with open("config.yaml", "r") as f:
+    with open("config.yaml") as f:
         config = yaml.safe_load(f)
 
     async def run_proxy(config):

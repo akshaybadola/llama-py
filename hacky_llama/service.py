@@ -35,13 +35,14 @@ class ModelManager:
         self.service_port = 8001
         self.service_url = f"http://localhost:{self.service_port}"
         self.config = config
+        self.python = config["python"]
         self.start_process()
 
     def _start_process(self):
         """Starts the llama.cpp process."""
         print("Starting process")
         command = [
-            "python",
+            self.python,
             "main.py",  # Assuming service.py contains the Llama routes
             "--model_path", self.config["model_path"],
             "--lib_path", self.config["lib_path"],

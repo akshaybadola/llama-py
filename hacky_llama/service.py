@@ -1,14 +1,13 @@
-import asyncio
+from typing import AsyncGenerator, Optional, Any
 import json
 import subprocess
-import sys
-import os
 import logging
-import httpx
+import copy
+from pathlib import Path
 from threading import Thread
-from functools import partial
 
-from typing import AsyncGenerator, Optional, Any
+import httpx
+
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import StreamingResponse, JSONResponse, Response
@@ -30,7 +29,8 @@ async def stream_response(upstream_url: str, data):
 
 class ModelManager:
     def __init__(self, config):
-        self.config = config
+        self._initial_config = config
+        self.config = copy.deepcopy(self._initial_config)
         self.llama = None
         self.process = None
         self.service_port = 8001
@@ -39,7 +39,7 @@ class ModelManager:
         self.python = config["python"]
         self.start_process()
 
-    def _start_process(self):
+    def _start_llama_process(self):
         """Starts the llama.cpp process."""
         cmd_args = ["--model_path", self.config["model_path"],
                     "--lib_path", self.config["lib_path"],
@@ -53,8 +53,27 @@ class ModelManager:
         self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = self.process.communicate()
 
+    def _start_llama_server_process(self):
+        """Starts the :code:`llama-server` process."""
+        llama_server_path = Path(self.config["lib_path"]).parent.joinpath("llama-server")
+        more_args = []
+        for k, v in self.config["overrides"].items():
+            more_args.extend([k.replace("_", "-"), str(v)])
+        cmd_args = ["--model", self.config["model_path"],
+                    "--n-predict", str(self.config["n_predict"]),
+                    "--port", str(self.service_port),
+                    *more_args]
+        print(f"Starting process with args {cmd_args}")
+        command = [str(llama_server_path), *cmd_args]
+        logger.info(f"Starting llama-server process: {' '.join(command)}")
+        self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = self.process.communicate()
+
     def start_process(self):
-        self.process_thread = Thread(target=self._start_process)
+        if "gemma-3" in self.config["model_path"]:
+            self.process_thread = Thread(target=self._start_llama_process)
+        else:
+            self.process_thread = Thread(target=self._start_llama_server_process)
         self.process_thread.daemon = True
         self.process_thread.start()
 
@@ -72,6 +91,9 @@ class ModelManager:
         self.stop_process()
         self.config.update(new_config)
         self.process = self.start_process()
+
+    def reset_config(self):
+        self.config = copy.deepcopy(self._initial_config)
 
     async def proxy_request(self, endpoint: str, request: Request):
         """Proxies a request to the service.py process."""
@@ -113,11 +135,16 @@ def model_manager_app(config):
     async def switch_model(request):
         return await model_switch_endpoint(request, model_manager)
 
-    async def stream(request):
-        return await model_manager.proxy_request("stream", request)
-
     async def model_info(request):
         return JSONResponse(model_manager.config, status_code=200)
+
+    async def reset_config(request):
+        model_manager.reset_config()
+        return JSONResponse({"message": "Reset config"})
+
+    # Proxy requests
+    async def stream(request):
+        return await model_manager.proxy_request("stream", request)
 
     async def completions(request):
         return await model_manager.proxy_request("completions", request)

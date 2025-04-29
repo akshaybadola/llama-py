@@ -58,10 +58,14 @@ class ModelManager:
         llama_server_path = Path(self.config["lib_path"]).parent.joinpath("llama-server")
         more_args = []
         for k, v in self.config["overrides"].items():
-            more_args.extend([k.replace("_", "-"), str(v)])
+            if v == True:
+                more_args.append("--" + k.replace("_", "-"))
+            else:
+                more_args.extend(["--" + k.replace("_", "-"), str(v)])
         cmd_args = ["--model", self.config["model_path"],
                     "--n-predict", str(self.config["n_predict"]),
                     "--port", str(self.service_port),
+                    "--log-file", "~/logs/llama.log",
                     *more_args]
         print(f"Starting process with args {cmd_args}")
         command = [str(llama_server_path), *cmd_args]

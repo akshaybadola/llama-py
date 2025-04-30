@@ -5,6 +5,7 @@ import logging
 import copy
 from pathlib import Path
 from threading import Thread
+import time
 
 import httpx
 
@@ -39,6 +40,16 @@ class ModelManager:
         self.python = config["python"]
         self.start_process()
 
+    def _print_process_output(self):
+        while True:
+            output = self.process.stdout.readline()
+            err = self.process.stderr.readline()
+            if output:
+                print(output.strip())
+            if err:
+                print(err.strip())
+            time.sleep(1)
+
     def _start_llama_process(self):
         """Starts the llama.cpp process."""
         cmd_args = ["--model_root", self.config["model_root"],
@@ -51,8 +62,9 @@ class ModelManager:
         print(f"Starting process with python: {self.python} and args {cmd_args}")
         command = [self.python, "main.py", *cmd_args]
         logger.info(f"Starting llama.cpp process with command: {' '.join(command)}")
-        self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = self.process.communicate()
+        self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                        text=True)
+        self._print_process_output()
 
     def _start_llama_server_process(self):
         """Starts the :code:`llama-server` process."""
@@ -71,8 +83,8 @@ class ModelManager:
         print(f"Starting llama-server process with args {cmd_args}")
         command = [str(llama_server_path), *cmd_args]
         logger.info(f"Starting llama-server process: {' '.join(command)}")
-        self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = self.process.communicate()
+        self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                        text=True)
 
     def start_process(self):
         if "gemma-3" in self.config["model_path"]:
@@ -131,7 +143,7 @@ async def model_switch_endpoint(request, model_manager):
     params = await request.json()
     logger.info(f"Switching model with params: {params}")
     model_manager.load_model(params)
-    return JSONResponse({"message": "Model switched"})
+    return JSONResponse({"message": "Model switched"}, status_code=200)
 
 
 def model_manager_app(config):
@@ -144,9 +156,13 @@ def model_manager_app(config):
     async def model_info(request):
         return JSONResponse(model_manager.config, status_code=200)
 
+    async def is_alive(request):
+        return JSONResponse({"message": model_manager.process.poll() is None},
+                            status_code=200)
+
     async def reset_config(request):
         model_manager.reset_config()
-        return JSONResponse({"message": "Reset config"})
+        return JSONResponse({"message": "Reset Config"}, status_code=200)
 
     # Proxy requests
     async def stream(request):
@@ -175,6 +191,7 @@ def model_manager_app(config):
         Route("/reset_context", endpoint=reset_context, methods=["GET"]),
         Route("/model_info", endpoint=model_info, methods=["GET"]),
         Route("/interrupt", endpoint=interrupt, methods=["GET"]),
+        Route("/is_alive", endpoint=is_alive, methods=["GET"]),
         Route("/is_generating", endpoint=is_generating, methods=["GET"]),
     ]
 

@@ -41,7 +41,8 @@ class ModelManager:
 
     def _start_llama_process(self):
         """Starts the llama.cpp process."""
-        cmd_args = ["--model_path", self.config["model_path"],
+        cmd_args = ["--model_root", self.config["model_root"],
+                    "--model_path", self.config["model_path"],
                     "--lib_path", self.config["lib_path"],
                     "--mmproj_path", self.config["mmproj_path"],
                     "--n_predict", str(self.config["n_predict"]),
@@ -62,12 +63,12 @@ class ModelManager:
                 more_args.append("--" + k.replace("_", "-"))
             else:
                 more_args.extend(["--" + k.replace("_", "-"), str(v)])
-        cmd_args = ["--model", self.config["model_path"],
+        cmd_args = ["--model", str(Path(self.config["model_root"]).joinpath(self.config["model_path"])),
                     "--n-predict", str(self.config["n_predict"]),
                     "--port", str(self.service_port),
                     "--log-file", "~/logs/llama.log",
                     *more_args]
-        print(f"Starting process with args {cmd_args}")
+        print(f"Starting llama-server process with args {cmd_args}")
         command = [str(llama_server_path), *cmd_args]
         logger.info(f"Starting llama-server process: {' '.join(command)}")
         self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -94,6 +95,7 @@ class ModelManager:
         """Loads a new model."""
         self.stop_process()
         self.config.update(new_config)
+        print(f"New config {self.config}")
         self.process = self.start_process()
 
     def reset_config(self):

@@ -49,5 +49,46 @@ async def test_stream(url):
                 print(f"Error: {response.status_code} - {(await response.aread()).decode()}")
 
 
+async def oai_compat(url, msg):
+    # imgs = re.findall(r"\(file://(/.+)\)", msg_txt)
+    # msg = re.sub(r"\(file://(/.+)\)", "<__image__>", msg_txt)
+    # imgs_data = []
+    # if imgs:
+    #     for img_path in imgs:
+    #         img = Image.open(img_path)
+    #         img_bytes = BytesIO()
+    #         img.save(img_bytes, format=img.format)
+    #         img_str = base64.b64encode(img_bytes.getvalue())
+    #         imgs_data.append(img_str.decode())
+    # message = {
+    #     "text": msg,
+    #     "images": imgs_data,
+    # }
+
+    # with open("/home/joe/ellama.buf.md") as f:
+    #     content = f.read()
+
+    messages = {"model": "unset", "stream": True,
+                "reset": True,
+                "messages": [{
+                    "role": "user",
+                    "content": msg
+                }]}
+    async with httpx.AsyncClient() as client:
+        async with client.stream("POST", url, json=messages, timeout=None) as response:
+            if response.status_code == 200:
+                start_time = time.time()
+                count = 0
+                async for chunk in response.aiter_bytes():
+                    print(chunk.decode().replace('\n', '', 1), end="")
+                    sys.stdout.flush()
+                    count += 1
+                end_time = time.time()
+                duration = end_time - start_time
+                print(f"Received {count} chunks in {duration:.2f} seconds")
+            else:
+                print(f"Error: {response.status_code} - {(await response.aread()).decode()}")
+
+
 if __name__ == '__main__':
     asyncio.run(test_stream(url=url))

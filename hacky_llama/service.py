@@ -85,6 +85,7 @@ class ModelManager:
         logger.info(f"Starting llama-server process: {' '.join(command)}")
         self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                         text=True)
+        self._print_process_output()
 
     def start_process(self):
         if "gemma-3" in self.config["model_path"]:
@@ -120,7 +121,7 @@ class ModelManager:
         try:
             if request.method == "GET":
                 resp = httpx.get(url, headers=headers, params=request.query_params)
-                return JSONResponse(resp.json(), headers=resp.headers)
+                return JSONResponse(resp.json(), headers=resp.headers, status_code=200)
             elif request.method == "POST":
                 if endpoint in {"stream", "completions", "chat/completions"}:
                     data = await request.json()
@@ -136,6 +137,13 @@ class ModelManager:
         except Exception as e:
             logger.error(f"Error proxying request to service.py: {e}")
             return JSONResponse({"error": f"Failed to proxy request: {e}"}, status_code=500)
+
+    async def interrupt(self, request: Request):
+        if "gemma-3" in self.config["model_path"]:
+            return await self.proxy_request("interrupt", request)
+        else:
+            self.process.send_signal(subprocess.signal.SIGINT)  # type: ignore
+            return JSONResponse({"message": "interrupted"}, status_code=200)
 
 
 async def model_switch_endpoint(request, model_manager):
@@ -178,7 +186,7 @@ def model_manager_app(config):
         return await model_manager.proxy_request("reset_context", request)
 
     async def interrupt(request):
-        return await model_manager.proxy_request("interrupt", request)
+        return await model_manager.interrupt(request)
 
     async def is_generating(request):
         return await model_manager.proxy_request("is_generating", request)

@@ -41,16 +41,24 @@ async def stream_response(request: Request) -> StreamingResponse:
 
 
 def get_prompt_from_messages(messages):
-    sys.stdout.flush()
-    if isinstance(messages[-1]["content"], dict):
-        if messages[-1]["content"].keys() - {"text", "images"}:
+    if isinstance(messages[-1]["content"], list):
+        for m in messages[-1]["content"]:
+            if m.keys() - {"type", "text", "images"}:
+                raise NotImplementedError("Only text and images implemented for now")
+        prompt = {"text": "\n\n".join([x["text"] for x in messages[-1]["content"]
+                                       if x["type"] == "text"]),
+                  "images": [x["image"] for x in messages[-1]["content"]
+                             if x["type"] == "image"]}
+    elif isinstance(messages[-1]["content"], dict):
+        if messages[-1]["content"].keys() - {"type", "text", "images"}:
             raise NotImplementedError("Only text and images implemented for now")
         prompt = messages[-1]["content"]
     elif isinstance(messages[-1]["content"], str):
         prompt = {"text": messages[-1]["content"], "images": []}
     else:
         raise NotImplementedError(f"Got bad message f{messages[-1]['content']}")
-    add_bos = False
+    reset = len(messages) == 1
+    return prompt, reset
 
 
 async def stream_chat(iface, messages: list[dict[str, str]],
@@ -59,7 +67,9 @@ async def stream_chat(iface, messages: list[dict[str, str]],
     """
     Generates a mock streaming response.  Replace with your model logic.
     """
-    prompt = get_prompt_from_messages(messages)
+    prompt, _reset = get_prompt_from_messages(messages)
+    reset = _reset or reset
+    add_bos = False
     if reset:
         iface.reset_context()
         add_bos = True
@@ -89,7 +99,9 @@ async def stream_chat(iface, messages: list[dict[str, str]],
 async def complete_chat(iface, messages: list[dict[str, str]],
                         temperature: Optional[float] = None,
                         reset: bool = False) -> str:
-    prompt = get_prompt_from_messages(messages)
+    prompt, _reset = get_prompt_from_messages(messages)
+    reset = _reset or reset
+    add_bos = False
     if reset:
         iface.reset_context()
         add_bos = True
@@ -110,7 +122,7 @@ async def chat(request: Request) -> StreamingResponse | JSONResponse:
     try:
         body = await request.json()
         messages = body["messages"]
-        stream = body.get("stream", True)
+        stream = body.get("stream", False)
         temperature = body.get("temperature", 0.2)
         reset = body.get("reset", False)
     except Exception as e:

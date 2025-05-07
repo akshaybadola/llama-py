@@ -40,13 +40,7 @@ async def stream_response(request: Request) -> StreamingResponse:
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-async def process_chat(iface, messages: list[dict[str, str]],
-                       temperature: Optional[float] = None,
-                       reset: bool = False) -> AsyncGenerator[str, None]:
-    """
-    Generates a mock streaming response.  Replace with your model logic.
-    """
-    # Need to format the prompt here
+def get_prompt_from_messages(messages):
     sys.stdout.flush()
     if isinstance(messages[-1]["content"], dict):
         if messages[-1]["content"].keys() - {"text", "images"}:
@@ -57,11 +51,21 @@ async def process_chat(iface, messages: list[dict[str, str]],
     else:
         raise NotImplementedError(f"Got bad message f{messages[-1]['content']}")
     add_bos = False
+
+
+async def stream_chat(iface, messages: list[dict[str, str]],
+                      temperature: Optional[float] = None,
+                      reset: bool = False) -> AsyncGenerator[str, None]:
+    """
+    Generates a mock streaming response.  Replace with your model logic.
+    """
+    prompt = get_prompt_from_messages(messages)
     if reset:
         iface.reset_context()
         add_bos = True
     print(f"prompt {prompt}, add_bos {add_bos}")
     sys.stdout.flush()
+    # Need to format the prompt here
     iface.eval_message(prompt, stream=True, add_bos=add_bos)
     try:
         async for token in iface.receive_tokens():
@@ -82,7 +86,19 @@ async def process_chat(iface, messages: list[dict[str, str]],
         yield "[DONE]\n\n"
 
 
-async def chat(request: Request) -> StreamingResponse:
+async def complete_chat(iface, messages: list[dict[str, str]],
+                        temperature: Optional[float] = None,
+                        reset: bool = False) -> str:
+    prompt = get_prompt_from_messages(messages)
+    if reset:
+        iface.reset_context()
+        add_bos = True
+    print(f"prompt {prompt}, add_bos {add_bos}")
+    sys.stdout.flush()
+    return iface.eval_message(prompt, stream=False, add_bos=add_bos)
+
+
+async def chat(request: Request) -> StreamingResponse | JSONResponse:
     """
     Handles the chat endpoints
     :code:`/completions`
@@ -105,9 +121,14 @@ async def chat(request: Request) -> StreamingResponse:
         return StreamingResponse(error_generator(e), media_type="text/event-stream")
 
     async def generate() -> AsyncGenerator[str, None]:
-        async for chunk in process_chat(iface, messages, temperature, reset):
+        async for chunk in stream_chat(iface, messages, temperature, reset):
             yield f"data: {chunk}\n\n"
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    if stream:
+        return StreamingResponse(generate(), media_type="text/event-stream")
+    else:
+        result = await complete_chat(iface, messages, temperature, reset)
+        return JSONResponse({"role": "assistant", "content": {"type": "text", "text": result}},
+                            status_code=200)
 
 
 async def reset_context(request: Request) -> JSONResponse:

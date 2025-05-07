@@ -56,7 +56,7 @@ class ModelManager:
                     "--port", str(self.service_port),
                     "--overrides", json.dumps(self.config["overrides"])]
         print(f"Starting process with python: {self.python} and args {cmd_args}")
-        command = [self.python, "main.py", *cmd_args]
+        command = [self.python, "-u", "main.py", *cmd_args]
         logger.info(f"Starting llama.cpp process with command: {' '.join(command)}")
         self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                         text=True)

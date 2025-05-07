@@ -40,15 +40,11 @@ class ModelManager:
         self.python = config["python"]
         self.start_process()
 
-    def _print_process_output(self):
+    def _print_stream(self, stream):
         while True:
-            output = self.process.stdout.readline()
-            err = self.process.stderr.readline()
-            if output:
+            output = stream.readline()
+            if len(output):
                 print(output.strip())
-            if err:
-                print(err.strip())
-            time.sleep(1)
 
     def _start_llama_process(self):
         """Starts the llama.cpp process."""
@@ -64,7 +60,12 @@ class ModelManager:
         logger.info(f"Starting llama.cpp process with command: {' '.join(command)}")
         self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                         text=True)
-        self._print_process_output()
+        self._print_stdout_thread = Thread(target=self._print_stream,
+                                           args=[self.process.stdout])
+        self._print_stderr_thread = Thread(target=self._print_stream,
+                                           args=[self.process.stderr])
+        self._print_stdout_thread.start()
+        self._print_stderr_thread.start()
 
     def _start_llama_server_process(self):
         """Starts the :code:`llama-server` process."""
@@ -85,7 +86,12 @@ class ModelManager:
         logger.info(f"Starting llama-server process: {' '.join(command)}")
         self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                         text=True)
-        self._print_process_output()
+        self._print_stdout_thread = Thread(target=self._print_stream,
+                                           args=[self.process.stdout])
+        self._print_stderr_thread = Thread(target=self._print_stream,
+                                           args=[self.process.stderr])
+        self._print_stdout_thread.start()
+        self._print_stderr_thread.start()
 
     def start_process(self):
         if "gemma-3" in self.config["model_path"]:
@@ -172,35 +178,32 @@ def model_manager_app(config):
         model_manager.reset_config()
         return JSONResponse({"message": "Reset Config"}, status_code=200)
 
-    # Proxy requests
-    async def stream(request):
-        return await model_manager.proxy_request("stream", request)
-
-    async def completions(request):
-        return await model_manager.proxy_request("completions", request)
-
-    async def chat_completions(request):
-        return await model_manager.proxy_request("chat/completions", request)
-
-    async def reset_context(request):
-        return await model_manager.proxy_request("reset_context", request)
-
+    # custom server specific endpoints
     async def interrupt(request):
         return await model_manager.interrupt(request)
 
     async def is_generating(request):
         return await model_manager.proxy_request("is_generating", request)
 
+    async def reset_context(request):
+        return await model_manager.proxy_request("reset_context", request)
+
+    # endpoints common to both custom and llama-server are proxied
+    async def proxy_endpoint(request: Request):
+        endpoint_name = request.path_params["endpoint_name"]
+        return await model_manager.proxy_request(endpoint_name, request)
+
     routes = [
         Route("/switch_model", endpoint=switch_model, methods=["POST"]),
-        Route("/stream", endpoint=stream, methods=["POST"]),
-        Route("/completions", endpoint=completions, methods=["POST"]),
-        Route("/chat/completions", endpoint=chat_completions, methods=["POST"]),
-        Route("/reset_context", endpoint=reset_context, methods=["GET"]),
         Route("/model_info", endpoint=model_info, methods=["GET"]),
-        Route("/interrupt", endpoint=interrupt, methods=["GET"]),
         Route("/is_alive", endpoint=is_alive, methods=["GET"]),
+        Route("/reset_config", endpoint=reset_config, methods=["GET"]),
+
+        Route("/reset_context", endpoint=reset_context, methods=["GET"]),
+        Route("/interrupt", endpoint=interrupt, methods=["GET"]),
         Route("/is_generating", endpoint=is_generating, methods=["GET"]),
+
+        Route("/{endpoint_name:path}", endpoint=proxy_endpoint, methods=["GET", "POST"]),
     ]
 
     app = Starlette(routes=routes, debug=True)

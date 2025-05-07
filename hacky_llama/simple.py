@@ -84,7 +84,11 @@ async def process_chat(iface, messages: list[dict[str, str]],
 
 async def chat(request: Request) -> StreamingResponse:
     """
-    Handles the /v1/chat/completions endpoint for streaming.
+    Handles the chat endpoints
+    :code:`/completions`
+    :code:`/chat/completions`
+    :code:`/v1/chat/completions`
+
     """
     iface = request.app.state.llama_interface
     try:
@@ -107,9 +111,6 @@ async def chat(request: Request) -> StreamingResponse:
 
 
 async def reset_context(request: Request) -> JSONResponse:
-    """
-    Handles the /v1/chat/completions endpoint for streaming.
-    """
     iface = request.app.state.llama_interface
     result = iface.reset_context()
     if not result:
@@ -136,6 +137,7 @@ async def create_app(config, mock_llama_interface=None) -> Starlette:
         Route("/stream", stream_response, methods=["POST"]),
         Route("/completions", chat, methods=["POST"]),
         Route("/chat/completions", chat, methods=["POST"]),
+        Route("/v1/chat/completions", chat, methods=["POST"]),
         Route("/reset_context", reset_context, methods=["GET"]),
         Route("/interrupt", interrupt, methods=["GET"]),
         Route("/is_generating", is_generating, methods=["GET"]),

@@ -171,8 +171,11 @@ def model_manager_app(config):
         return JSONResponse(model_manager.config, status_code=200)
 
     async def is_alive(request):
-        return JSONResponse({"message": model_manager.process.poll() is None},
-                            status_code=200)
+        if model_manager.process is None:
+            msg = {"message": False}
+        else:
+            msg = {"message": model_manager.process.poll() is None}
+        return JSONResponse(msg, status_code=200)
 
     async def reset_config(request):
         model_manager.reset_config()

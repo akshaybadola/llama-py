@@ -104,9 +104,17 @@ def init_lib(dll_path: str):
     ]
     lib.gemma3_eval_message_with_images.restype = c_int
 
+    # static collect response
+    lib.gemma3_static_collect_response.argtypes = [
+        c_int,                      # n_predict
+        c_char_p,                   # result buffer
+        c_int                       # n_generations
+    ]
+    lib.gemma3_static_collect_response.restype = c_int
+
     # static generate response
     lib.gemma3_static_generate_response.argtypes = [
-        c_int                       # model_path
+        c_int                       # n_predict
     ]
     lib.gemma3_static_generate_response.restype = c_int
 

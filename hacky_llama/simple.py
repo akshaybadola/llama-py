@@ -96,16 +96,15 @@ async def stream_chat(iface, messages: list[dict[str, str]],
         yield "[DONE]\n\n"
 
 
-async def complete_chat(iface, messages: list[dict[str, str]],
-                        temperature: Optional[float] = None,
-                        reset: bool = False) -> str:
+def complete_chat(iface, messages: list[dict[str, str]],
+                  temperature: Optional[float] = None,
+                  reset: bool = False) -> str:
     prompt, _reset = get_prompt_from_messages(messages)
     reset = _reset or reset
     add_bos = False
     if reset:
         iface.reset_context()
         add_bos = True
-    print(f"prompt {prompt}, add_bos {add_bos}")
     sys.stdout.flush()
     return iface.eval_message(prompt, stream=False, add_bos=add_bos)
 
@@ -138,7 +137,8 @@ async def chat(request: Request) -> StreamingResponse | JSONResponse:
     if stream:
         return StreamingResponse(generate(), media_type="text/event-stream")
     else:
-        result = await complete_chat(iface, messages, temperature, reset)
+        result = complete_chat(iface, messages, temperature, reset)
+        print("RESULT", result, flush=True)
         return JSONResponse({"role": "assistant", "content": {"type": "text", "text": result}},
                             status_code=200)
 

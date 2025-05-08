@@ -1,7 +1,6 @@
 from typing import Optional, AsyncGenerator
 import ctypes
-from ctypes import (cdll, c_void_p, c_char_p, c_int, create_string_buffer, CFUNCTYPE,
-                    POINTER, c_ubyte, cast, Structure, Array, c_voidp)
+from ctypes import c_int, create_string_buffer, POINTER, c_ubyte, cast
 import time
 from io import BytesIO
 import json
@@ -89,8 +88,11 @@ class LlamaInterface:
                 lambda: self.lib.gemma3_static_stream_response(self.c_callback, self.n_predict)
             )
             return 0
-        result = self.lib.gemma3_static_generate_response(self.n_predict)
-        return result
+        buffer = create_string_buffer(self.n_predict)
+        n_result = self.lib.gemma3_static_collect_response(c_int(self.n_predict),
+                                                           buffer,
+                                                           c_int(self.n_predict * 8))
+        return buffer.value.decode()
 
     async def receive_tokens(self) -> AsyncGenerator[str, None]:
         """Receive tokens"""

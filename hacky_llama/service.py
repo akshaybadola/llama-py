@@ -129,15 +129,19 @@ class ModelManager:
                 resp = httpx.get(url, headers=headers, params=request.query_params)
                 return JSONResponse(resp.json(), headers=resp.headers, status_code=200)
             elif request.method == "POST":
-                if endpoint in {"stream", "completions", "chat/completions"}:
-                    data = await request.json()
+                data = await request.json()
+                if endpoint == "stream" or\
+                   endpoint in {"completions", "chat/completions", "v1/chat/completions"} and\
+                   data.get("stream"):
                     return StreamingResponse(stream_response(url, data),
                                              background=BackgroundTask(lambda: None),
                                              media_type="text/event-stream")
+                elif endpoint in {"completions", "chat/completions", "v1/chat/completions"}:
+                    resp = httpx.post(url, json=data, timeout=None)
+                    return JSONResponse(resp.json(), status_code=200)
                 else:
-                    async with httpx.AsyncClient() as client:
-                        data = await request.json()
-                        return await client.post(url, json=data, timeout=2)
+                    resp = httpx.post(url, json=data, timeout=2)
+                    return JSONResponse(resp.json(), status_code=200)
             else:
                 return JSONResponse({"Error": "Method not allowed"}, status_code=405)
         except Exception as e:

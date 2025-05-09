@@ -45,6 +45,9 @@ def init_lib(dll_path: str):
     ]
     lib.gemma3_create_context.restype = c_void_p
 
+    lib.gemma3_print_params.argtypes = []
+    lib.gemma3_print_params.restype = c_void_p
+
     lib.re_init_sampler.argtypes = [
         c_char_p                    # overrides
     ]

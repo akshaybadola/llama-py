@@ -13,7 +13,7 @@ from PIL import Image
 from .lib import init_lib, TOKEN_CALLBACK
 
 
-class LlamaInterface:
+class GemmaInterface:
     def __init__(self, lib_path: str, model_path: str, mmproj_path: Optional[str] = None,
                  overrides: Optional[dict] = None, n_predict: int = 8192, loop=None):
         print("Loading library", lib_path)
@@ -23,7 +23,6 @@ class LlamaInterface:
         self.q: asyncio.Queue[str] = asyncio.Queue()
         self.c_callback = TOKEN_CALLBACK(self.python_token_callback)
         self.is_multimodal = True
-        self.temperature = 0.2
         if not mmproj_path:
             print("mmproj path not given. Only text input will be supported")
             self.is_multimodal = False
@@ -51,10 +50,10 @@ class LlamaInterface:
         future.add_done_callback(lambda f: f.exception() and print("Put failed:", f.exception()))
 
     def eval_message(self, message: dict[str, str | list[str]], stream=False, add_bos=False,
-                     temperature: float = 0.2, stop_strings=None) -> int | str:
-        if self.temperature != temperature:
-            self.lib.re_init_sampler(json.dumps({"temperature": temperature}))
-            self.temperature = temperature
+                     stop_strings=None, sampler_params: Optional[dict] = None) -> int | str:
+        sampler_params = sampler_params or {}
+        if sampler_params:
+            self.lib.re_init_sampler(json.dumps(sampler_params).encode())
         self.q = asyncio.Queue()
         msg_text = message["text"]
         msg_imgs = message["images"]

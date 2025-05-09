@@ -3,15 +3,15 @@ import asyncio
 from PIL import Image
 from io import BytesIO
 import base64
-from hacky_llama import llama
+from hacky_llama import gemma_iface
 
 
 def init_iface(lib_path):
-    return llama.LlamaInterface(lib_path,
-                                os.path.expanduser("~/gemma-3-4b-it-q4_0.gguf"),
-                                os.path.expanduser("~/mmproj-model-f16-4B.gguf"),
-                                overrides={"n_gpu_layers": 100, "n_ctx": 8192, "n_batch": 8192},
-                                loop=None)
+    return gemma_iface.LlamaInterface(lib_path,
+                                      os.path.expanduser("~/gemma-3-4b-it-q4_0.gguf"),
+                                      os.path.expanduser("~/mmproj-model-f16-4B.gguf"),
+                                      overrides={"n_gpu_layers": 100, "n_ctx": 8192, "n_batch": 8192},
+                                      loop=None)
 
 
 def eval_message(iface, n_predict, stream, stop_strings):
@@ -58,11 +58,12 @@ def test_collect_with_images(iface):
     print(result)
 
 
-def test_smol_prompt(iface):
+def test_smol_prompt(iface, temp=0.2):
     with open(os.path.abspath(__file__).rsplit("/", 1)[0] + "/smol_prompt.md") as f:
         msg_text = f.read()
     message = {"text": msg_text,
                "images": []}
     stop_strings = ['<end_code>', 'Observation:', 'Calling tools:']
-    result = iface.eval_message(message, False, add_bos=True, stop_strings=stop_strings)
+    result = iface.eval_message(message, False, add_bos=True, stop_strings=stop_strings,
+                                temperature=temp)
     return result

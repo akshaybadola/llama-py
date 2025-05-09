@@ -2,11 +2,10 @@ import os
 import json
 import argparse
 import asyncio
-import yaml
 import uvicorn
 
 
-from hacky_llama.gemma import create_app
+from hacky_llama.gemma_service import create_app
 
 
 if __name__ == "__main__":
@@ -23,6 +22,7 @@ if __name__ == "__main__":
     model_root = args.__dict__.pop("model_root")
     args.model_path = os.path.join(model_root, args.model_path)
     args.mmproj_path = os.path.join(model_root, args.mmproj_path)
+
     async def run_app(config):
         port = config.pop("port")
         config["overrides"] = json.loads(config["overrides"])

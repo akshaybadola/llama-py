@@ -9,7 +9,7 @@ from starlette.requests import Request
 from starlette.responses import StreamingResponse, Response, JSONResponse
 from starlette.routing import Route
 
-from . import llama
+from .gemma_iface import GemmaInterface
 
 
 async def stream_response(request: Request) -> StreamingResponse:
@@ -19,7 +19,7 @@ async def stream_response(request: Request) -> StreamingResponse:
     message = await request.json()
     #  get the llama interface from the app state.
     print(f"Got message {message}")
-    iface: llama.LlamaInterface = request.app.state.llama_interface
+    iface: GemmaInterface = request.app.state.llama_interface
     request_id = iface.eval_message(message, stream=True)
     # TODO: It's an int right now
     if request_id is None:
@@ -61,10 +61,10 @@ def get_prompt_from_messages(messages):
     return prompt, reset
 
 
-async def stream_chat(iface: llama.LlamaInterface, messages: list[dict[str, str]],
-                      temperature: float = 0.2,
+async def stream_chat(iface: GemmaInterface, messages: list[dict[str, str]],
                       stop_strings: Optional[list[str]] = None,
-                      reset: bool = False) -> AsyncGenerator[str, None]:
+                      reset: bool = False,
+                      sampler_params: Optional[dict] = None) -> AsyncGenerator[str, None]:
     """
     Generates a mock streaming response.  Replace with your model logic.
     """
@@ -78,7 +78,8 @@ async def stream_chat(iface: llama.LlamaInterface, messages: list[dict[str, str]
     sys.stdout.flush()
     # Need to format the prompt here
     iface.eval_message(prompt, stream=True, add_bos=add_bos,
-                       temperature=temperature, stop_strings=stop_strings)
+                       stop_strings=stop_strings,
+                       sampler_params=sampler_params)
     try:
         async for token in iface.receive_tokens():
             resp = {
@@ -98,10 +99,10 @@ async def stream_chat(iface: llama.LlamaInterface, messages: list[dict[str, str]
         yield "[DONE]\n\n"
 
 
-def complete_chat(iface: llama.LlamaInterface, messages: list[dict[str, str]],
-                  temperature: float = 0.2,
+def complete_chat(iface: GemmaInterface, messages: list[dict[str, str]],
                   stop_strings: Optional[list[str]] = None,
-                  reset: bool = False) -> str:
+                  reset: bool = False,
+                  sampler_params: Optional[dict] = None) -> str:
     prompt, _reset = get_prompt_from_messages(messages)
     reset = _reset or reset
     add_bos = False
@@ -111,8 +112,8 @@ def complete_chat(iface: llama.LlamaInterface, messages: list[dict[str, str]],
     sys.stdout.flush()
     return str(iface.eval_message(prompt, stream=False,
                                   add_bos=add_bos,
-                                  temperature=temperature,
-                                  stop_strings=stop_strings))
+                                  stop_strings=stop_strings,
+                                  sampler_params=sampler_params))
 
 
 async def chat(request: Request) -> StreamingResponse | JSONResponse:
@@ -123,12 +124,11 @@ async def chat(request: Request) -> StreamingResponse | JSONResponse:
     :code:`/v1/chat/completions`
 
     """
-    iface: llama.LlamaInterface = request.app.state.llama_interface
+    iface: GemmaInterface = request.app.state.llama_interface
     try:
         body = await request.json()
         messages = body["messages"]
         stream = body.get("stream", False)
-        temperature = body.get("temperature", 0.2)
         stop_strings = body.get("stop", [])
         reset = body.get("reset", False)
     except Exception as e:
@@ -138,24 +138,32 @@ async def chat(request: Request) -> StreamingResponse | JSONResponse:
             yield "data: [DONE]\n\n"
         return StreamingResponse(error_generator(e), media_type="text/event-stream")
 
+    sampler_params = {k: body.get(k)
+                      for k in ["temperature", "top_k", "top_p", "min_p", "top_n_sigma"]
+                      if body.get(k)}
+    if "temperature" in sampler_params:
+        sampler_params["temp"] = sampler_params.pop("temperature")
+
     async def generate() -> AsyncGenerator[str, None]:
         async for chunk in stream_chat(iface, messages,
-                                       temperature=temperature, reset=reset,
-                                       stop_strings=stop_strings):
+                                       reset=reset,
+                                       stop_strings=stop_strings,
+                                       sampler_params=sampler_params):
             yield f"data: {chunk}\n\n"
     if stream:
         return StreamingResponse(generate(), media_type="text/event-stream")
     else:
         result = complete_chat(iface, messages,
-                               temperature=temperature, reset=reset,
-                               stop_strings=stop_strings)
+                               reset=reset,
+                               stop_strings=stop_strings,
+                               sampler_params=sampler_params)
         print("RESULT", result, flush=True)
         return JSONResponse({"role": "assistant", "content": {"type": "text", "text": result}},
                             status_code=200)
 
 
 async def reset_context(request: Request) -> JSONResponse:
-    iface: llama.LlamaInterface = request.app.state.llama_interface
+    iface: GemmaInterface = request.app.state.llama_interface
     result = iface.reset_context()
     if not result:
         return JSONResponse({"message": "Successfully reset"}, status_code=200)
@@ -192,7 +200,7 @@ async def create_app(config, mock_llama_interface=None) -> Starlette:
             app.state.llama_interface = mock_llama_interface
         else:
             loop = asyncio.get_running_loop()
-            app.state.llama_interface = llama.LlamaInterface(
+            app.state.llama_interface = GemmaInterface(
                 loop=loop,
                 **config
             )

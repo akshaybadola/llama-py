@@ -49,10 +49,14 @@ class LlamaInterface:
         future = asyncio.run_coroutine_threadsafe(self.q.put(token), self.loop)
         future.add_done_callback(lambda f: f.exception() and print("Put failed:", f.exception()))
 
-    def eval_message(self, message: dict[str, str | list[str]], stream=False, add_bos=False):
+    def eval_message(self, message: dict[str, str | list[str]], stream=False, add_bos=False,
+                     stop_strings=None):
         self.q = asyncio.Queue()
         msg_text = message["text"]
         msg_imgs = message["images"]
+        stop_strings = stop_strings or []
+        c_strings = (ctypes.c_char_p * len(stop_strings))()
+        c_strings[:] = [s.encode('utf-8') for s in stop_strings]  # Encode to bytes
         if not self.is_multimodal:
             result = self.lib.gemma3_static_eval_message_text_only(
                 msg_text.encode(),
@@ -85,13 +89,17 @@ class LlamaInterface:
         if stream:
             self.loop.run_in_executor(
                 None,
-                lambda: self.lib.gemma3_static_stream_response(self.c_callback, self.n_predict)
+                lambda: self.lib.gemma3_static_stream_response(self.c_callback, self.n_predict,
+                                                               c_strings,
+                                                               c_int(len(c_strings)))
             )
             return 0
         buffer = create_string_buffer(self.n_predict)
         n_result = self.lib.gemma3_static_collect_response(c_int(self.n_predict),
                                                            buffer,
-                                                           c_int(self.n_predict * 8))
+                                                           c_int(self.n_predict * 8),
+                                                           c_strings,
+                                                           c_int(len(c_strings)))
         return buffer.value.decode()
 
     async def receive_tokens(self) -> AsyncGenerator[str, None]:

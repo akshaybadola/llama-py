@@ -45,31 +45,6 @@ def init_lib(dll_path: str):
     ]
     lib.gemma3_create_context.restype = c_void_p
 
-    lib.gemma3_generate_response.argtypes = [
-        c_void_p,                   # ctx_ptr
-        c_void_p,                   # msg_str
-        c_int                       # n_predict
-    ]
-    lib.gemma3_generate_response.restype = c_int
-
-    lib.gemma3_collect_response.argtypes = [
-        c_void_p,                   # ctx_ptr
-        c_void_p,                   # msg_str
-        c_int,                      # n_predict
-        c_char_p,                   # result buffer
-        c_int                       # n_generations
-    ]
-    lib.gemma3_collect_response.restype = c_int
-
-    lib.gemma3_stream_response.argtypes = [
-        c_void_p,                   # ctx_ptr
-        c_void_p,                   # msg_str
-        c_int,                      # n_predict
-        TOKEN_CALLBACK              # Callback function
-    ]
-    lib.gemma3_stream_response.restype = c_int
-
-
     lib.gemma3_eval_message_with_images.argtypes = [
         c_void_p,                   # ctx_ptr
         c_char_p,                   # msg_str

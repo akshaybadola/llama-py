@@ -6,7 +6,7 @@ import yaml
 import uvicorn
 
 
-from hacky_llama.simple import create_app
+from hacky_llama.gemma import create_app
 
 
 if __name__ == "__main__":

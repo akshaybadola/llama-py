@@ -19,7 +19,7 @@ async def stream_response(request: Request) -> StreamingResponse:
     message = await request.json()
     #  get the llama interface from the app state.
     print(f"Got message {message}")
-    iface = request.app.state.llama_interface
+    iface: llama.LlamaInterface = request.app.state.llama_interface
     request_id = iface.eval_message(message, stream=True)
     # TODO: It's an int right now
     if request_id is None:
@@ -61,8 +61,9 @@ def get_prompt_from_messages(messages):
     return prompt, reset
 
 
-async def stream_chat(iface, messages: list[dict[str, str]],
-                      temperature: Optional[float] = None,
+async def stream_chat(iface: llama.LlamaInterface, messages: list[dict[str, str]],
+                      temperature: float = 0.2,
+                      stop_strings: Optional[list[str]] = None,
                       reset: bool = False) -> AsyncGenerator[str, None]:
     """
     Generates a mock streaming response.  Replace with your model logic.
@@ -76,7 +77,8 @@ async def stream_chat(iface, messages: list[dict[str, str]],
     print(f"prompt {prompt}, add_bos {add_bos}")
     sys.stdout.flush()
     # Need to format the prompt here
-    iface.eval_message(prompt, stream=True, add_bos=add_bos)
+    iface.eval_message(prompt, stream=True, add_bos=add_bos,
+                       temperature=temperature, stop_strings=stop_strings)
     try:
         async for token in iface.receive_tokens():
             resp = {
@@ -96,8 +98,9 @@ async def stream_chat(iface, messages: list[dict[str, str]],
         yield "[DONE]\n\n"
 
 
-def complete_chat(iface, messages: list[dict[str, str]],
-                  temperature: Optional[float] = None,
+def complete_chat(iface: llama.LlamaInterface, messages: list[dict[str, str]],
+                  temperature: float = 0.2,
+                  stop_strings: Optional[list[str]] = None,
                   reset: bool = False) -> str:
     prompt, _reset = get_prompt_from_messages(messages)
     reset = _reset or reset
@@ -106,7 +109,10 @@ def complete_chat(iface, messages: list[dict[str, str]],
         iface.reset_context()
         add_bos = True
     sys.stdout.flush()
-    return iface.eval_message(prompt, stream=False, add_bos=add_bos)
+    return str(iface.eval_message(prompt, stream=False,
+                                  add_bos=add_bos,
+                                  temperature=temperature,
+                                  stop_strings=stop_strings))
 
 
 async def chat(request: Request) -> StreamingResponse | JSONResponse:
@@ -117,12 +123,13 @@ async def chat(request: Request) -> StreamingResponse | JSONResponse:
     :code:`/v1/chat/completions`
 
     """
-    iface = request.app.state.llama_interface
+    iface: llama.LlamaInterface = request.app.state.llama_interface
     try:
         body = await request.json()
         messages = body["messages"]
         stream = body.get("stream", False)
         temperature = body.get("temperature", 0.2)
+        stop_strings = body.get("stop", [])
         reset = body.get("reset", False)
     except Exception as e:
         async def error_generator(e):
@@ -132,19 +139,23 @@ async def chat(request: Request) -> StreamingResponse | JSONResponse:
         return StreamingResponse(error_generator(e), media_type="text/event-stream")
 
     async def generate() -> AsyncGenerator[str, None]:
-        async for chunk in stream_chat(iface, messages, temperature, reset):
+        async for chunk in stream_chat(iface, messages,
+                                       temperature=temperature, reset=reset,
+                                       stop_strings=stop_strings):
             yield f"data: {chunk}\n\n"
     if stream:
         return StreamingResponse(generate(), media_type="text/event-stream")
     else:
-        result = complete_chat(iface, messages, temperature, reset)
+        result = complete_chat(iface, messages,
+                               temperature=temperature, reset=reset,
+                               stop_strings=stop_strings)
         print("RESULT", result, flush=True)
         return JSONResponse({"role": "assistant", "content": {"type": "text", "text": result}},
                             status_code=200)
 
 
 async def reset_context(request: Request) -> JSONResponse:
-    iface = request.app.state.llama_interface
+    iface: llama.LlamaInterface = request.app.state.llama_interface
     result = iface.reset_context()
     if not result:
         return JSONResponse({"message": "Successfully reset"}, status_code=200)

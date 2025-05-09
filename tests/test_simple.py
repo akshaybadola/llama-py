@@ -2,8 +2,8 @@ import pytest
 import asyncio
 from typing import Optional, AsyncGenerator
 
-from hacky_llama.simple import create_app, chat
-from hacky_llama import simple
+from hacky_llama.gemma import create_app, chat
+from hacky_llama import gemma
 
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -41,7 +41,7 @@ def run_test_server():
 
 def test_run_fake_server():
     config = {"lib_path": None, "model_path": None, "mmproj_path": None, "overrides": None}
-    simple.process_chat = fake_process_chat
+    gemma.process_chat = fake_process_chat
 
     async def create_app(config, mock_llama_interface=None) -> Starlette:
         """
@@ -50,7 +50,7 @@ def test_run_fake_server():
         app = Starlette(routes=[
             Route("/completions", chat, methods=["POST"]),
             Route("/chat/completions", chat, methods=["POST"]),
-            Route("/reset_context", simple.reset_context, methods=["GET"]),
+            Route("/reset_context", gemma.reset_context, methods=["GET"]),
         ])
 
         async def startup():

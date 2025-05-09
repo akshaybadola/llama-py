@@ -23,6 +23,7 @@ class LlamaInterface:
         self.q: asyncio.Queue[str] = asyncio.Queue()
         self.c_callback = TOKEN_CALLBACK(self.python_token_callback)
         self.is_multimodal = True
+        self.temperature = 0.2
         if not mmproj_path:
             print("mmproj path not given. Only text input will be supported")
             self.is_multimodal = False
@@ -50,7 +51,10 @@ class LlamaInterface:
         future.add_done_callback(lambda f: f.exception() and print("Put failed:", f.exception()))
 
     def eval_message(self, message: dict[str, str | list[str]], stream=False, add_bos=False,
-                     stop_strings=None):
+                     temperature: float = 0.2, stop_strings=None) -> int | str:
+        if self.temperature != temperature:
+            self.lib.re_init_sampler(json.dumps({"temperature": temperature}))
+            self.temperature = temperature
         self.q = asyncio.Queue()
         msg_text = message["text"]
         msg_imgs = message["images"]
@@ -58,8 +62,8 @@ class LlamaInterface:
         c_strings = (ctypes.c_char_p * len(stop_strings))()
         c_strings[:] = [s.encode('utf-8') for s in stop_strings]  # Encode to bytes
         if not self.is_multimodal:
-            result = self.lib.gemma3_static_eval_message_text_only(
-                msg_text.encode(),
+            _ = self.lib.gemma3_static_eval_message_text_only(
+                msg_text.encode(),  # type: ignore
                 add_bos
             )
         else:
@@ -79,8 +83,8 @@ class LlamaInterface:
                                                                    for img_data in image_data))
             image_sizes_array_type = c_int * num_images
             image_sizes_array = image_sizes_array_type(*image_sizes)
-            result = self.lib.gemma3_static_eval_message_with_images(
-                msg_text.encode(),
+            _ = self.lib.gemma3_static_eval_message_with_images(
+                msg_text.encode(),  # type: ignore
                 image_data_pointers,
                 image_sizes_array,
                 num_images,
@@ -95,11 +99,11 @@ class LlamaInterface:
             )
             return 0
         buffer = create_string_buffer(self.n_predict)
-        n_result = self.lib.gemma3_static_collect_response(c_int(self.n_predict),
-                                                           buffer,
-                                                           c_int(self.n_predict * 8),
-                                                           c_strings,
-                                                           c_int(len(c_strings)))
+        _ = self.lib.gemma3_static_collect_response(c_int(self.n_predict),
+                                                    buffer,
+                                                    c_int(self.n_predict * 8),
+                                                    c_strings,
+                                                    c_int(len(c_strings)))
         return buffer.value.decode()
 
     async def receive_tokens(self) -> AsyncGenerator[str, None]:

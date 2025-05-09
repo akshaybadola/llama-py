@@ -15,7 +15,7 @@ from starlette.responses import StreamingResponse, JSONResponse, Response
 from starlette.routing import Route
 from starlette.background import BackgroundTask
 
-from . import simple
+from . import gemma
 
 
 logger = logging.getLogger(__name__)

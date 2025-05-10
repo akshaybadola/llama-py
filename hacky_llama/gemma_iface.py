@@ -2,13 +2,10 @@ from typing import Optional, AsyncGenerator
 import ctypes
 from ctypes import c_int, create_string_buffer, POINTER, c_ubyte, cast
 import time
-from io import BytesIO
 import json
 import asyncio
 import base64
 import sys
-
-from PIL import Image
 
 from .lib import init_lib, TOKEN_CALLBACK
 
@@ -60,6 +57,7 @@ class GemmaInterface:
         stop_strings = stop_strings or []
         c_strings = (ctypes.c_char_p * len(stop_strings))()
         c_strings[:] = [s.encode('utf-8') for s in stop_strings]  # Encode to bytes
+        self.process_start_time = time.time()
         if not self.is_multimodal:
             _ = self.lib.gemma3_static_eval_message_text_only(
                 msg_text.encode(),  # type: ignore
@@ -89,6 +87,7 @@ class GemmaInterface:
                 num_images,
                 add_bos
             )
+        self.generation_start_time = time.time()
         if stream:
             self.loop.run_in_executor(
                 None,
@@ -117,3 +116,6 @@ class GemmaInterface:
 
     def reset_context(self):
         return self.lib.gemma3_static_reset()
+
+    def info(self):
+        return self.lib.gemma3_tokens_info()

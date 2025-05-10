@@ -13,6 +13,10 @@ from PIL import Image
 
 TOKEN_CALLBACK = CFUNCTYPE(None, c_char_p)
 
+class Gemma3TokensInfo(Structure):
+    _fields_ = [("prompt_n", ctypes.c_int),
+                ("predicted_n", ctypes.c_int)]
+
 
 def init_lib(dll_path: str):
     """Initialize Gemma3 C API lib and return
@@ -116,5 +120,8 @@ def init_lib(dll_path: str):
 
     lib.gemma3_static_interrupt.argtypes = []
     lib.gemma3_static_interrupt.restype = c_voidp
+
+    lib.gemma3_tokens_info.argtypes = []
+    lib.gemma3_tokens_info.restype = Gemma3TokensInfo
 
     return lib

@@ -1,12 +1,12 @@
 from typing import Optional, AsyncGenerator
 import asyncio
+import time
 import json
-from typing import AsyncGenerator
 import sys
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import StreamingResponse, Response, JSONResponse
+from starlette.responses import StreamingResponse, JSONResponse
 from starlette.routing import Route
 
 from .gemma_iface import GemmaInterface
@@ -116,6 +116,31 @@ def complete_chat(iface: GemmaInterface, messages: list[dict[str, str]],
                                   sampler_params=sampler_params))
 
 
+def get_usage_timings(iface: GemmaInterface):
+    info = iface.info()
+    process_time = iface.generation_start_time - iface.process_start_time
+    generation_time = time.time() - iface.generation_start_time
+    prompt_n = info.prompt_n
+    predicted_n = info.predicted_n
+    return {
+        "usage": {
+            "completion_tokens": predicted_n,
+            "prompt_tokens": prompt_n,
+            "total_tokens": prompt_n+predicted_n,
+        },
+        "timings": {
+            "prompt_n": prompt_n,
+            "prompt_ms": process_time*1000,
+            "prompt_per_token_ms": process_time/prompt_n*1000,
+            "prompt_per_second": 1/process_time*prompt_n,
+            "predicted_n": predicted_n,
+            "predicted_ms": generation_time*1000,
+            "predicted_per_token_ms": generation_time/predicted_n*1000,
+            "predicted_per_second": 1/generation_time*predicted_n,
+        }
+    }
+
+
 async def chat(request: Request) -> StreamingResponse | JSONResponse:
     """
     Handles the chat endpoints
@@ -157,8 +182,8 @@ async def chat(request: Request) -> StreamingResponse | JSONResponse:
                                reset=reset,
                                stop_strings=stop_strings,
                                sampler_params=sampler_params)
-        print("RESULT", result, flush=True)
-        return JSONResponse({"role": "assistant", "content": {"type": "text", "text": result}},
+        return JSONResponse({"role": "assistant", "content": {"type": "text", "text": result},
+                             **get_usage_timings(iface)},
                             status_code=200)
 
 

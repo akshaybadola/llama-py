@@ -7,7 +7,7 @@ from hacky_llama import gemma_iface
 
 
 def init_iface(lib_path):
-    return gemma_iface.LlamaInterface(lib_path,
+    return gemma_iface.GemmaInterface(lib_path,
                                       os.path.expanduser("~/gemma-3-4b-it-q4_0.gguf"),
                                       os.path.expanduser("~/mmproj-model-f16-4B.gguf"),
                                       overrides={"n_gpu_layers": 100, "n_ctx": 8192, "n_batch": 8192},
@@ -65,5 +65,5 @@ def test_smol_prompt(iface, temp=0.2):
                "images": []}
     stop_strings = ['<end_code>', 'Observation:', 'Calling tools:']
     result = iface.eval_message(message, False, add_bos=True, stop_strings=stop_strings,
-                                temperature=temp)
+                                sampler_params={"temp": temp})
     return result

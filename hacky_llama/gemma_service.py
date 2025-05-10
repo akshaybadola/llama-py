@@ -182,7 +182,8 @@ async def chat(request: Request) -> StreamingResponse | JSONResponse:
                                reset=reset,
                                stop_strings=stop_strings,
                                sampler_params=sampler_params)
-        return JSONResponse({"role": "assistant", "content": {"type": "text", "text": result},
+        return JSONResponse({"role": "assistant",
+                             "choices": [{"content": {"type": "text", "text": result}}],
                              **get_usage_timings(iface)},
                             status_code=200)
 

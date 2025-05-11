@@ -93,10 +93,15 @@ async def stream_chat(iface: GemmaInterface, messages: list[dict[str, str]],
             yield json.dumps(resp)  # Add a newline for easier client handling
     except KeyError as e:
         yield f"KeyError: {e}"
-        yield "[DONE]\n\n"
     except Exception as e:
         yield f"Exception: {e}"
-        yield "[DONE]\n\n"
+    finally:
+        usage = get_usage_timings(iface)
+        final_chunk = {
+            "choices": [{"delta": {"content": ""}, "finish_reason": "stop"}],
+            "usage": usage
+        }
+        yield json.dumps(final_chunk)
 
 
 def complete_chat(iface: GemmaInterface, messages: list[dict[str, str]],

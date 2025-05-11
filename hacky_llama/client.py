@@ -1,94 +1,48 @@
 import asyncio
 import time
-import re
-import base64
-from io import BytesIO
-from PIL import Image
+import json
 import sys
 
 import httpx
 
-msg_txt = """I am having trouble with some of the math in this (file:///home/joe/nn_mat_test_1.png).
-This is a about NonNegative Matrices. This is the next page (file:///home/joe/nn_mat_test_2.png).
 
-Can you extract the text from the images and explain the math? YOU MUST FORMAT your answer in LaTeX
-for all the math symbols."""
+class Client:
+    def __init__(self, base_url):
+        self.base_url = base_url
+        self.completions_url = f"{self.base_url}/v1/chat/completions"
 
-url = "http://192.168.1.101:8000/stream"
+    def check_health(self):
+        async def _check_health():
+            async with httpx.AsyncClient() as client:
+                response = await client.get(self.base_url + "/health", timeout=3)
+                return response.json()
+        return asyncio.run(_check_health())
 
+    async def stream(self, messages):
+        async with httpx.AsyncClient() as client:
+            async with client.stream("POST", self.completions_url, json=messages, timeout=None) as response:
+                if response.status_code == 200:
+                    start_time = time.time()
+                    count = 0
+                    async for chunk in response.aiter_bytes():
+                        temp = chunk.decode().replace('\n', '', 1)
+                        try:
+                            token = json.loads(temp[6:])["choices"][0]["delta"]["content"]
+                        except Exception:
+                            print(temp, file=sys.stderr, flush=True)
+                        print(token, end="", flush=True)
+                        count += 1
+                        end_time = time.time()
+                    duration = end_time - start_time
+                    print(f"Received {count} chunks in {duration:.2f} seconds", file=sys.stderr)
+                else:
+                    print(f"Error: {response.status_code} - {(await response.aread()).decode()}",
+                          file=sys.stderr)
 
-async def test_stream(url):
-    imgs = re.findall(r"\(file://(/.+)\)", msg_txt)
-    msg = re.sub(r"\(file://(/.+)\)", "<__image__>", msg_txt)
-    imgs_data = []
-    if imgs:
-        for img_path in imgs:
-            img = Image.open(img_path)
-            img_bytes = BytesIO()
-            img.save(img_bytes, format=img.format)
-            img_str = base64.b64encode(img_bytes.getvalue())
-            imgs_data.append(img_str.decode())
-    message = {
-        "text": msg,
-        "images": imgs_data,
-    }
-
-    async with httpx.AsyncClient() as client:
-        async with client.stream("POST", url, json=message, timeout=None) as response:
+    async def post(self, messages):
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.completions_url, json=messages, timeout=None)
             if response.status_code == 200:
-                start_time = time.time()
-                count = 0
-                async for chunk in response.aiter_text():
-                    print(chunk.replace('\n', '', 1), end="")
-                    sys.stdout.flush()
-                    count += 1
-                end_time = time.time()
-                duration = end_time - start_time
-                print(f"Received {count} chunks in {duration:.2f} seconds")
+                return response.json()
             else:
-                print(f"Error: {response.status_code} - {(await response.aread()).decode()}")
-
-
-async def oai_compat(url, msg):
-    # imgs = re.findall(r"\(file://(/.+)\)", msg_txt)
-    # msg = re.sub(r"\(file://(/.+)\)", "<__image__>", msg_txt)
-    # imgs_data = []
-    # if imgs:
-    #     for img_path in imgs:
-    #         img = Image.open(img_path)
-    #         img_bytes = BytesIO()
-    #         img.save(img_bytes, format=img.format)
-    #         img_str = base64.b64encode(img_bytes.getvalue())
-    #         imgs_data.append(img_str.decode())
-    # message = {
-    #     "text": msg,
-    #     "images": imgs_data,
-    # }
-
-    # with open("/home/joe/ellama.buf.md") as f:
-    #     content = f.read()
-
-    messages = {"model": "unset", "stream": True,
-                "reset": True,
-                "messages": [{
-                    "role": "user",
-                    "content": msg
-                }]}
-    async with httpx.AsyncClient() as client:
-        async with client.stream("POST", url, json=messages, timeout=None) as response:
-            if response.status_code == 200:
-                start_time = time.time()
-                count = 0
-                async for chunk in response.aiter_bytes():
-                    print(chunk.decode().replace('\n', '', 1), end="")
-                    sys.stdout.flush()
-                    count += 1
-                end_time = time.time()
-                duration = end_time - start_time
-                print(f"Received {count} chunks in {duration:.2f} seconds")
-            else:
-                print(f"Error: {response.status_code} - {(await response.aread()).decode()}")
-
-
-if __name__ == '__main__':
-    asyncio.run(test_stream(url=url))
+                return {"error": "Could not get response"}

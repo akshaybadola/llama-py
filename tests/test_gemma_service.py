@@ -107,8 +107,6 @@ def test_real_server():
     t.start()
 
     def test_image_stream():
-        # test image
-
         msg_txt = """I am having trouble with some of the math in this (file:///home/joe/nn_mat_test_1.png).
         This is a about NonNegative Matrices. This is the next page (file:///home/joe/nn_mat_test_2.png).
 
@@ -120,7 +118,10 @@ def test_real_server():
         import base64
         from io import BytesIO
 
-        async def test_image_stream(url):
+        port = 8001
+        url = f"http://192.168.1.101:{port}/v1/chat/completions"
+
+        async def _test_image_stream(url, msg_txt):
             imgs = re.findall(r"\(file://(/.+)\)", msg_txt)
             msg = re.sub(r"\(file://(/.+)\)", "<__image__>", msg_txt)
             imgs_data = []
@@ -131,13 +132,16 @@ def test_real_server():
                     img.save(img_bytes, format=img.format)
                     img_str = base64.b64encode(img_bytes.getvalue())
                     imgs_data.append(img_str.decode())
-            message = {
-                "text": msg,
-                "images": imgs_data,
+            messages = {
+                "model": "unset", "stream": True,
+                "reset": True,
+                "messages": [{"role": "user",
+                              "content": {"text": msg,
+                                         "images": imgs_data}}]
             }
 
             async with httpx.AsyncClient() as client:
-                async with client.stream("POST", url, json=message, timeout=None) as response:
+                async with client.stream("POST", url, json=messages, timeout=None) as response:
                     if response.status_code == 200:
                         start_time = time.time()
                         count = 0
@@ -149,11 +153,12 @@ def test_real_server():
                         print(f"Received {count} chunks in {duration:.2f} seconds")
                     else:
                         print(f"Error: {response.status_code} - {(await response.aread()).decode()}")
+        asyncio.run(_test_image_stream(url, msg_txt))
+
 
     def test_simple_msg():
         url = f"http://localhost:{port}/v1/chat/completions"
         msg = "This is a test"
-
 
         async def oai_compat(url, msg):
             messages = {"model": "unset", "stream": True,
@@ -185,5 +190,6 @@ def test_real_server():
         # stream
         asyncio.run(oai_compat(url, msg))
 
-    time.sleep(5)
+    time.sleep(3)
     test_simple_msg()
+    # test_image_stream()

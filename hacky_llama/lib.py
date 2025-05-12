@@ -57,15 +57,6 @@ def init_lib(dll_path: str):
     ]
     lib.re_init_sampler.restype = c_voidp
 
-    lib.gemma3_eval_message_with_images.argtypes = [
-        c_void_p,                   # ctx_ptr
-        c_char_p,                   # msg_str
-        POINTER(POINTER(c_ubyte)),  # Array of pointers to image data
-        POINTER(c_int),             # Array of image data sizes
-        c_int                       # Number of images
-    ]
-    lib.gemma3_eval_message_with_images.restype = c_int
-
     # static initialize
     lib.gemma3_static_initialize.argtypes = [
         c_char_p,                   # model_path
@@ -89,7 +80,7 @@ def init_lib(dll_path: str):
         c_int,                      # Number of images
         c_bool                      # add bos
     ]
-    lib.gemma3_eval_message_with_images.restype = c_int
+    lib.gemma3_static_eval_message_with_images.restype = c_int
 
     # static collect response
     lib.gemma3_static_collect_response.argtypes = [

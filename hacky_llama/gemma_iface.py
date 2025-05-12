@@ -46,29 +46,31 @@ class GemmaInterface:
         future = asyncio.run_coroutine_threadsafe(self.q.put(token), self.loop)
         future.add_done_callback(lambda f: f.exception() and print("Put failed:", f.exception()))
 
-    def eval_message(self, message: dict[str, str | list[str]], stream=False, add_bos=False,
+    def eval_message(self, messages: list[dict[str, str | list[str]]], stream=False, add_bos=False,
                      stop_strings=None, sampler_params: Optional[dict] = None) -> int | str:
         sampler_params = sampler_params or {}
         if sampler_params:
             self.lib.re_init_sampler(json.dumps(sampler_params).encode())
         self.q = asyncio.Queue()
-        msg_text = message["text"]
-        msg_imgs = message["images"]
+        msgs_text = [{"role": m["role"], "content": m["content"]} for m in messages]
+        msg_imgs: list[str] = []
+        for m in messages:
+            msg_imgs.extend(m["images"])
         stop_strings = stop_strings or []
         c_strings = (ctypes.c_char_p * len(stop_strings))()
         c_strings[:] = [s.encode('utf-8') for s in stop_strings]  # Encode to bytes
         self.process_start_time = time.time()
         if not self.is_multimodal:
             _ = self.lib.gemma3_static_eval_message_text_only(
-                msg_text.encode(),  # type: ignore
+                json.dumps(msgs_text).encode(),  # type: ignore
                 add_bos
             )
         else:
             image_data = []
             image_sizes = []
             if msg_imgs:
-                for m in msg_imgs:
-                    data = base64.b64decode(m)
+                for img in msg_imgs:
+                    data = base64.b64decode(img)
                     image_data.append((c_ubyte * len(data)).from_buffer_copy(data))
                     image_sizes.append(len(data))
                 num_images = len(image_data)
@@ -81,7 +83,7 @@ class GemmaInterface:
             image_sizes_array_type = c_int * num_images
             image_sizes_array = image_sizes_array_type(*image_sizes)
             _ = self.lib.gemma3_static_eval_message_with_images(
-                msg_text.encode(),  # type: ignore
+                json.dumps(msgs_text).encode(),  # type: ignore
                 image_data_pointers,
                 image_sizes_array,
                 num_images,

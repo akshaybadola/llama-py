@@ -40,21 +40,35 @@ async def stream_response(request: Request) -> StreamingResponse:
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-def get_prompt_from_messages(messages):
+def get_message_list(messages) -> tuple[list[dict], bool]:
+    """Convert appropriately the messages received
+
+    Args:
+        messages: A list of messages
+
+
+    """
+    prompt = []
     if isinstance(messages[-1]["content"], list):
-        for m in messages[-1]["content"]:
-            if m.keys() - {"type", "text", "images"}:
-                raise NotImplementedError("Only text and images implemented for now")
-        prompt = {"text": "\n\n".join([x["text"] for x in messages[-1]["content"]
-                                       if x["type"] == "text"]),
-                  "images": [x["image"] for x in messages[-1]["content"]
-                             if x["type"] == "image"]}
+        for m in messages:
+            for _m in m["content"]:
+                if _m.keys() - {"type", "text", "images"}:
+                    raise NotImplementedError("Only text and images implemented for now")
+        for m in messages:
+            prompt.append({"role": m["role"],
+                           "content": "\n\n".join([x["text"] for x in m["content"]
+                                                   if x["type"] == "text"]),
+                           "images": [x["image"] for x in m["content"]
+                                      if x["type"] == "image"]})
     elif isinstance(messages[-1]["content"], dict):
         if messages[-1]["content"].keys() - {"type", "text", "images"}:
             raise NotImplementedError("Only text and images implemented for now")
-        prompt = messages[-1]["content"]
+        for m in messages:
+            prompt.append({"role": m["role"],
+                           "content": m["content"]["text"],
+                           "images": m["content"].get("images")})
     elif isinstance(messages[-1]["content"], str):
-        prompt = {"text": messages[-1]["content"], "images": []}
+        prompt = [{"role": "user", "content": messages[-1]["content"], "images": []}]
     else:
         raise NotImplementedError(f"Got bad message f{messages[-1]['content']}")
     reset = len(messages) == 1
@@ -65,19 +79,24 @@ async def stream_chat(iface: GemmaInterface, messages: list[dict[str, str]],
                       stop_strings: Optional[list[str]] = None,
                       reset: bool = False,
                       sampler_params: Optional[dict] = None) -> AsyncGenerator[str, None]:
+    """Stream chat response
+
+        iface: GemmaInterface
+        messages: List of messages with {role, content} keys
+        stop_strings: An optional list of strings to stop generation (antiprompt)
+        reset: Reset context flag
+        sampler_params: Optional additional sampler params
+
     """
-    Generates a mock streaming response.  Replace with your model logic.
-    """
-    prompt, _reset = get_prompt_from_messages(messages)
+    msgs, _reset = get_message_list(messages)
     reset = _reset or reset
     add_bos = False
     if reset:
         iface.reset_context()
         add_bos = True
-    print(f"prompt {prompt}, add_bos {add_bos}")
+    print(f"msgs {msgs}, add_bos {add_bos}")
     sys.stdout.flush()
-    # Need to format the prompt here
-    iface.eval_message(prompt, stream=True, add_bos=add_bos,
+    iface.eval_message(msgs, stream=True, add_bos=add_bos,
                        stop_strings=stop_strings,
                        sampler_params=sampler_params)
     try:
@@ -108,20 +127,36 @@ def complete_chat(iface: GemmaInterface, messages: list[dict[str, str]],
                   stop_strings: Optional[list[str]] = None,
                   reset: bool = False,
                   sampler_params: Optional[dict] = None) -> str:
-    prompt, _reset = get_prompt_from_messages(messages)
+    """Generate complete chat response and send as one message.
+
+        iface: GemmaInterface
+        messages: List of messages with {role, content} keys
+        stop_strings: An optional list of strings to stop generation (antiprompt)
+        reset: Reset context flag
+        sampler_params: Optional additional sampler params
+
+    """
+    msgs, _reset = get_message_list(messages)
     reset = _reset or reset
     add_bos = False
     if reset:
         iface.reset_context()
         add_bos = True
     sys.stdout.flush()
-    return str(iface.eval_message(prompt, stream=False,
+    return str(iface.eval_message(msgs, stream=False,
                                   add_bos=add_bos,
                                   stop_strings=stop_strings,
                                   sampler_params=sampler_params))
 
 
 def get_usage_timings(iface: GemmaInterface):
+    """Get usage/timings from :code:`GemmaInterface`
+
+    Args:
+        iface: The gemma interface
+
+
+    """
     info = iface.info()
     process_time = iface.generation_start_time - iface.process_start_time
     generation_time = time.time() - iface.generation_start_time
@@ -163,7 +198,7 @@ async def chat(request: Request) -> StreamingResponse | JSONResponse:
         reset = body.get("reset", False)
     except Exception as e:
         async def error_generator(e):
-            err = {'error': e}
+            err = {'error': str(e)}
             yield f"data: {json.dumps(err)}\n\n"
             yield "data: [DONE]\n\n"
         return StreamingResponse(error_generator(e), media_type="text/event-stream")

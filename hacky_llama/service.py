@@ -4,6 +4,8 @@ import logging
 import copy
 from pathlib import Path
 from threading import Thread
+import re
+import glob
 
 import httpx
 
@@ -106,12 +108,23 @@ class ModelManager:
             self.process = None
             logger.info("llama.cpp process stopped.")
 
-    def load_model(self, new_config):
+    def load_model(self, new_config) -> bool:
         """Loads a new model."""
+        if model_name := new_config.get("model_name"):
+            model_list = self.list_models()
+            matches = list(filter(lambda x: re.match(".+" + model_name + ".+", x, flags=re.IGNORECASE),
+                                  model_list))
+            if matches:
+                new_config.pop("model_name")
+                new_config["model_path"] = matches[0]
+        elif "model_path" not in new_config:
+            print("Bad new config")
+            return False
         self.stop_process()
         self.config.update(new_config)
         print(f"New config {self.config}")
         self.process = self.start_process()
+        return True
 
     def reset_config(self):
         self.config = copy.deepcopy(self._initial_config)
@@ -151,21 +164,27 @@ class ModelManager:
             self.process.send_signal(subprocess.signal.SIGINT)  # type: ignore
             return JSONResponse({"message": "interrupted"}, status_code=200)
 
-
-async def model_switch_endpoint(request, model_manager):
-    """Endpoint to switch models."""
-    params = await request.json()
-    logger.info(f"Switching model with params: {params}")
-    model_manager.load_model(params)
-    return JSONResponse({"message": "Model switched"}, status_code=200)
+    def list_models(self):
+        models = glob.glob(self.config["model_root"] + "/*.gguf")
+        return [Path(x).name for x in models if not Path(x).name.startswith("mmproj")]
 
 
 def model_manager_app(config):
     """Starlette application for model management."""
     model_manager = ModelManager(config)
 
+    # Model manager only endpoints
+    async def list_models(request):
+        return JSONResponse(model_manager.list_models(), status_code=200)
+
     async def switch_model(request):
-        return await model_switch_endpoint(request, model_manager)
+        params = await request.json()
+        logger.info(f"Switching model with params: {params}")
+        status = model_manager.load_model(params)
+        if status:
+            return JSONResponse({"message": "Model switch initiated"}, status_code=200)
+        else:
+            return JSONResponse({"message": "Bad params"}, status_code=400)
 
     async def model_info(request):
         return JSONResponse(model_manager.config, status_code=200)
@@ -197,6 +216,7 @@ def model_manager_app(config):
         return await model_manager.proxy_request(endpoint_name, request)
 
     routes = [
+        Route("/list_models", endpoint=list_models, methods=["GET"]),
         Route("/switch_model", endpoint=switch_model, methods=["POST"]),
         Route("/model_info", endpoint=model_info, methods=["GET"]),
         Route("/is_alive", endpoint=is_alive, methods=["GET"]),

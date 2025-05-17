@@ -11,7 +11,7 @@ import httpx
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import StreamingResponse, JSONResponse
+from starlette.responses import StreamingResponse, JSONResponse, Response
 from starlette.routing import Route
 from starlette.background import BackgroundTask
 
@@ -136,7 +136,10 @@ class ModelManager:
         try:
             if request.method == "GET":
                 resp = httpx.get(url, headers=headers, params=request.query_params)
-                return JSONResponse(resp.json(), headers=resp.headers, status_code=200)
+                if not endpoint:
+                    return Response(resp.content.decode(), status_code=200)
+                else:
+                    return JSONResponse(resp.json(), headers=resp.headers, status_code=200)
             elif request.method == "POST":
                 data = await request.json()
                 if endpoint == "stream" or\

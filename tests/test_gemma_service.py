@@ -99,6 +99,76 @@ def run_server():
     asyncio.run(run_app(config))
 
 
+def test_mtmd_image_stream():
+    msg_txt = """I am having trouble with some of the math in this (file:///home/joe/nn_mat_test_1.png).
+    This is a about NonNegative Matrices. This is the next page (file:///home/joe/nn_mat_test_2.png).
+
+    Can you extract the text from the images and explain the math? YOU MUST FORMAT your answer in LaTeX
+    for all the math symbols."""
+
+    import re
+    import base64
+    import time
+    import httpx
+    import json
+    from io import BytesIO
+    from PIL import Image
+
+    port = 8001
+    url = f"http://192.168.1.101:{port}/v1/chat/completions"
+
+    async def _test_image_stream(url, msg_txt):
+        imgs = re.findall(r"\(file://(/.+)\)", msg_txt)
+        msgs = {"model": "unset", "stream": True,
+                "messages": [{
+                    "role": "user",
+                    "content": None
+                }]}
+        imgs_data = []
+        if imgs:
+            for i, img_path in enumerate(imgs):
+                img = Image.open(img_path)
+                img_bytes = BytesIO()
+                img.save(img_bytes, format=img.format)
+                img_str = base64.b64encode(img_bytes.getvalue())
+                imgs_data.append({"data": img_str.decode(), "id": i})
+                msg_txt = re.sub(r"\(file://(/.+)\)", f"[img-{i}]", msg_txt, count=1)
+        messages = {
+            "model": "unset", "stream": True,
+            "reset": True,
+            "messages": [{
+                    "role": "user",
+                    "content": msg_txt,
+                    "image_data": imgs_data
+                }]
+        }
+
+        async with httpx.AsyncClient() as client:
+            async with client.stream("POST", url, json=messages, timeout=None) as response:
+                if response.status_code == 200:
+                    start_time = time.time()
+                    count = 0
+                    async for chunk in response.aiter_text():
+                        try:
+                            if isinstance(chunk, bytes):
+                                chunk = chunk.decode()
+                            temp = json.loads(chunk.replace('\n', '', 1)[6:])
+                            token = temp["choices"][0]["delta"]["content"]
+                            print(token, end="", flush=True)
+                            if "usage" in temp:
+                                print("USAGE\n\n", temp["usage"])
+                        except Exception:
+                            print(temp, file=sys.stderr, flush=True)
+                        # print(chunk.replace('\n', '', 1), end="", flush=True)
+                        count += 1
+                    end_time = time.time()
+                    duration = end_time - start_time
+                    print(f"Received {count} chunks in {duration:.2f} seconds")
+                else:
+                    print(f"Error: {response.status_code} - {(await response.aread()).decode()}")
+    asyncio.run(_test_image_stream(url, msg_txt))
+
+
 def test_real_server():
     import httpx
     import time
@@ -155,14 +225,15 @@ def test_real_server():
                         print(f"Error: {response.status_code} - {(await response.aread()).decode()}")
         asyncio.run(_test_image_stream(url, msg_txt))
 
-
-    def test_simple_msg():
-        url = f"http://localhost:{port}/v1/chat/completions"
-        msg = "This is a test"
+    def test_simple_msg(host="192.168.1.101", port=8000, msg=None, gpu_id=None):
+        if gpu_id is None:
+            url = f"http://{host}:{port}/chat/completions"
+        else:
+            url = f"http://{host}:{port}/{gpu_id}/chat/completions"
+        msg = msg or "This is a test"
 
         async def oai_compat(url, msg):
             messages = {"model": "unset", "stream": True,
-                        "reset": True,
                         "messages": [{
                             "role": "user",
                             "content": msg
@@ -187,9 +258,8 @@ def test_real_server():
                         print(f"Received {count} chunks in {duration:.2f} seconds")
                     else:
                         print(f"Error: {response.status_code} - {(await response.aread()).decode()}")
-        # stream
         asyncio.run(oai_compat(url, msg))
 
     time.sleep(3)
-    test_simple_msg()
+    test_simple_msg(port=8001)
     # test_image_stream()

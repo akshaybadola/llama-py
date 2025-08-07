@@ -6,11 +6,11 @@ from hacky_llama.service import model_manager_app
 
 
 if __name__ == "__main__":
-    with open("config.yaml") as f:
+    with open("config.yaml.multi") as f:
         config = yaml.safe_load(f)
 
     async def run_proxy(config):
-        app = model_manager_app(config)  # starts proc automatically
+        app = model_manager_app(config)
         uvicorn_config = uvicorn.Config(app=app, host="0.0.0.0", port=8000, log_level="debug")
         server = uvicorn.Server(uvicorn_config)
         await server.serve()

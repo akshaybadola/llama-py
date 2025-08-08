@@ -224,11 +224,13 @@ class ModelManager:
                                              background=BackgroundTask(lambda: None),
                                              media_type="text/event-stream")
                 elif endpoint in {"completions", "chat/completions", "v1/chat/completions"}:
-                    resp = httpx.post(url, json=data, timeout=None)
-                    return JSONResponse(resp.json(), status_code=200)
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.post(url, json=data, timeout=None)
+                        return JSONResponse(resp.json(), status_code=200)
                 else:
-                    resp = httpx.post(url, json=data, timeout=2)
-                    return JSONResponse(resp.json(), status_code=200)
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.post(url, json=data, timeout=2)
+                        return JSONResponse(resp.json(), status_code=200)
             else:
                 return JSONResponse({"Error": "Method not allowed"}, status_code=405)
         except Exception as e:
